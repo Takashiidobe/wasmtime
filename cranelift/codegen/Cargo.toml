@@ -94,6 +94,7 @@ x86 = []
 arm64 = []
 s390x = []
 riscv64 = []
+z80 = []
 pulley = [
     "dep:pulley-interpreter",
     "pulley-interpreter/encode",
