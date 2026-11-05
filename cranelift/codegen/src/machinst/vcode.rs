@@ -1751,7 +1751,12 @@ impl<I: VCodeInst> VRegAllocator<I> {
             // We can extend this if/when we support 32-bit targets; e.g.,
             // an i128 on a 32-bit machine will need up to four machine regs
             // for a `Value`.
-            _ => panic!("Value must reside in 1 or 2 registers"),
+            _ => {
+                return Err(CodegenError::Unsupported(format!(
+                    "value type {ty} requires {} registers; this backend supports at most 2",
+                    regclasses.len()
+                )));
+            }
         };
         for (&reg_ty, &reg) in tys.iter().zip(regs.regs().iter()) {
             let vreg = reg.to_virtual_reg().unwrap();
