@@ -222,9 +222,10 @@ mod lowering_tests {
     use crate::dominator_tree::DominatorTree;
     use crate::flowgraph::ControlFlowGraph;
     use crate::ir::condcodes::IntCC;
+    use crate::ir::immediates::Imm64;
     use crate::ir::{
-        AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, StackSlotData,
-        StackSlotKind, UserExternalName, UserFuncName, types,
+        AbiParam, ExtFuncData, ExternalName, Function, GlobalValueData, InstBuilder, Signature,
+        StackSlotData, StackSlotKind, UserExternalName, UserFuncName, types,
     };
     use crate::isa::CallConv;
     use crate::machinst::CompiledCodeStencil;
@@ -506,6 +507,46 @@ mod lowering_tests {
                 .any(|bytes| bytes[0] == 0xF8)
         );
         assert_eq!(result.0.buffer.data().last(), Some(&0xC9));
+    }
+
+    #[test]
+    fn compiles_i16_symbol_value_with_absolute_relocation() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 9), Signature::new(CallConv::Fast));
+        func.signature.returns.push(AbiParam::new(types::I16));
+        let name = func.declare_imported_user_function(UserExternalName::new(0, 10));
+        let global = func.create_global_value(GlobalValueData::Symbol {
+            name: ExternalName::user(name),
+            offset: Imm64::new(3),
+            colocated: true,
+            tls: false,
+        });
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let address = cursor.ins().symbol_value(types::I16, global);
+        cursor.ins().return_(&[address]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let backend = isa_builder(Triple::from_str("z80-unknown-none").unwrap())
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+
+        assert!(result.0.buffer.data().windows(3).any(|bytes| bytes == [0x21, 0, 0]));
+        assert!(result.0.buffer.relocs().iter().any(|reloc| {
+            reloc.kind == crate::binemit::Reloc::Abs2 && reloc.addend == 3
+        }));
     }
 
     #[test]

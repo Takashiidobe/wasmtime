@@ -15,6 +15,7 @@
     (Or8 (dst WritableReg) (lhs Reg) (rhs Reg))
     (Xor8 (dst WritableReg) (lhs Reg) (rhs Reg))
     (LoadImm8 (dst WritableReg) (imm u8))
+    (LoadSymbol16 (dst_low WritableReg) (dst_high WritableReg) (scratch_h WritableReg) (scratch_l WritableReg) (name ExternalName) (offset i64))
     (LoadMem8 (address_low Reg) (address_high Reg) (offset i32) (scratch_h WritableReg) (scratch_l WritableReg) (accumulator WritableReg) (dst WritableReg))
     (LoadMem16 (address_low Reg) (address_high Reg) (offset i32) (scratch_h WritableReg) (scratch_l WritableReg) (accumulator WritableReg) (dst_low WritableReg) (dst_high WritableReg))
     (StoreMem8 (address_low Reg) (address_high Reg) (offset i32) (scratch_h WritableReg) (scratch_l WritableReg) (accumulator WritableReg) (src Reg))

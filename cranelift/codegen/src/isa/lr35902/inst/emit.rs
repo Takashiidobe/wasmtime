@@ -108,6 +108,33 @@ pub(crate) fn emit(
         Inst::LoadImm8 { dst, imm } => {
             emit_ld_r_imm8(sink, super::regs::hw_enc(dst.to_reg()), *imm)
         }
+        Inst::LoadSymbol16 {
+            dst_low,
+            dst_high,
+            scratch_h,
+            scratch_l,
+            name,
+            offset,
+        } => {
+            sink.put1(0x21);
+            let reloc_offset = sink.cur_offset();
+            sink.put2(0);
+            sink.add_reloc_at_offset(reloc_offset, crate::binemit::Reloc::Abs2, name, *offset);
+            if dst_high.to_reg() != scratch_h.to_reg() {
+                emit_ld_r_r(
+                    sink,
+                    super::regs::hw_enc(dst_high.to_reg()),
+                    super::regs::Gpr8::H as u8,
+                );
+            }
+            if dst_low.to_reg() != scratch_l.to_reg() {
+                emit_ld_r_r(
+                    sink,
+                    super::regs::hw_enc(dst_low.to_reg()),
+                    super::regs::Gpr8::L as u8,
+                );
+            }
+        }
         Inst::LoadMem8 {
             address_low: _,
             address_high: _,

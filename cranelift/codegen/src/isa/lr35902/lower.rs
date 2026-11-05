@@ -1,4 +1,4 @@
-use crate::ir::{Inst as IRInst, Opcode, types};
+use crate::ir::{Inst as IRInst, InstructionData, Opcode, types};
 use crate::isa::lr35902::LR35902Backend;
 use crate::isa::lr35902::inst::*;
 use crate::machinst::Reg;
@@ -47,6 +47,34 @@ impl LowerBackend for LR35902Backend {
                 let dst_high = dst.regs()[1];
                 ctx.emit(Inst::imm(imm as u8, dst_low));
                 ctx.emit(Inst::imm((imm >> 8) as u8, dst_high));
+                Some(smallvec![ValueRegs::two(
+                    dst_low.to_reg(),
+                    dst_high.to_reg(),
+                )])
+            }
+            Opcode::SymbolValue if ctx.output_ty(ir_inst, 0) == types::I16 => {
+                let InstructionData::UnaryGlobalValue { global_value, .. } = ctx.data(ir_inst)
+                else {
+                    return None;
+                };
+                let (name, _, offset) = ctx.symbol_value_data(*global_value)?;
+                let name = name.clone();
+                let dst = ctx.alloc_tmp(types::I16);
+                let scratch = ctx.alloc_tmp(types::I16);
+                let [dst_low, dst_high] = dst.regs() else {
+                    return None;
+                };
+                let [scratch_l, scratch_h] = scratch.regs() else {
+                    return None;
+                };
+                ctx.emit(Inst::LoadSymbol16 {
+                    dst_low: *dst_low,
+                    dst_high: *dst_high,
+                    scratch_h: *scratch_h,
+                    scratch_l: *scratch_l,
+                    name,
+                    offset,
+                });
                 Some(smallvec![ValueRegs::two(
                     dst_low.to_reg(),
                     dst_high.to_reg(),

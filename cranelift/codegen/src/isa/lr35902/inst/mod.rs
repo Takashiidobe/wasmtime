@@ -179,6 +179,30 @@ impl PrettyPrint for Inst {
             Inst::LoadImm8 { dst, imm } => {
                 format!("ld {}, ${imm:02X}", asm_reg(dst.to_reg()))
             }
+            Inst::LoadSymbol16 {
+                dst_low,
+                dst_high,
+                scratch_h,
+                scratch_l,
+                name,
+                offset,
+            } => {
+                let symbol = if *offset == 0 {
+                    format!("{name:?}")
+                } else if *offset > 0 {
+                    format!("{name:?}+{offset}")
+                } else {
+                    format!("{name:?}{offset}")
+                };
+                let mut lines = vec![format!("ld hl, {symbol}")];
+                if dst_high.to_reg() != scratch_h.to_reg() {
+                    lines.push(format!("ld {}, h", asm_reg(dst_high.to_reg())));
+                }
+                if dst_low.to_reg() != scratch_l.to_reg() {
+                    lines.push(format!("ld {}, l", asm_reg(dst_low.to_reg())));
+                }
+                lines.join("\n")
+            }
             Inst::LoadMem8 { offset, dst, .. } => {
                 let mut lines = asm_mem_address(*offset);
                 lines.extend([
@@ -674,6 +698,18 @@ impl MachInst for Inst {
                 collector.reg_clobbers(regs::preg_set(regs::Gpr8::A));
             }
             Inst::LoadImm8 { dst, .. } => collector.reg_def(dst),
+            Inst::LoadSymbol16 {
+                dst_low,
+                dst_high,
+                scratch_h,
+                scratch_l,
+                ..
+            } => {
+                collector.reg_fixed_early_def(scratch_h, regs::h());
+                collector.reg_fixed_early_def(scratch_l, regs::l());
+                collector.reg_def(dst_low);
+                collector.reg_def(dst_high);
+            }
             Inst::LoadMem8 {
                 address_low,
                 address_high,
