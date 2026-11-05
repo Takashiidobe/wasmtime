@@ -6,7 +6,7 @@ use regalloc2::{PReg, VReg};
 use super::{RealReg, Reg, VirtualReg, Writable};
 use core::fmt::Debug;
 
-const VALUE_REGS_PARTS: usize = 2;
+const VALUE_REGS_PARTS: usize = 4;
 
 /// Location at which a `Value` is stored in register(s): the value is located
 /// in one or more registers, depending on its width. A value may be stored in
@@ -114,19 +114,26 @@ impl<R: Clone + Copy + Debug + PartialEq + Eq + InvalidSentinel> ValueRegs<R> {
     /// Create a Value-in-R location for a value stored in one register.
     pub fn one(reg: R) -> Self {
         ValueRegs {
-            parts: [reg, R::invalid_sentinel()],
+            parts: [reg, R::invalid_sentinel(), R::invalid_sentinel(), R::invalid_sentinel()],
         }
     }
     /// Create a Value-in-R location for a value stored in two registers.
     pub fn two(r1: R, r2: R) -> Self {
-        ValueRegs { parts: [r1, r2] }
+        ValueRegs { parts: [r1, r2, R::invalid_sentinel(), R::invalid_sentinel()] }
+    }
+
+    /// Create a Value-in-R location for a value stored in four registers.
+    pub fn four(r1: R, r2: R, r3: R, r4: R) -> Self {
+        ValueRegs { parts: [r1, r2, r3, r4] }
     }
 
     /// Return the number of registers used.
     pub fn len(self) -> usize {
         // If rustc/LLVM is smart enough, this might even be vectorized...
-        (self.parts[0] != R::invalid_sentinel()) as usize
-            + (self.parts[1] != R::invalid_sentinel()) as usize
+        self.parts
+            .iter()
+            .take_while(|part| !part.is_invalid_sentinel())
+            .count()
     }
 
     /// Map individual registers via a map function.
@@ -135,9 +142,7 @@ impl<R: Clone + Copy + Debug + PartialEq + Eq + InvalidSentinel> ValueRegs<R> {
         NewR: Clone + Copy + Debug + PartialEq + Eq + InvalidSentinel,
         F: Fn(R) -> NewR,
     {
-        ValueRegs {
-            parts: [f(self.parts[0]), f(self.parts[1])],
-        }
+        ValueRegs { parts: self.parts.map(f) }
     }
 }
 

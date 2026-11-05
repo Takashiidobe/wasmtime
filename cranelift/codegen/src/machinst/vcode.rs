@@ -1748,6 +1748,12 @@ impl<I: VCodeInst> VRegAllocator<I> {
         let regs: ValueRegs<Reg> = match regclasses {
             &[rc0] => ValueRegs::one(check(VReg::new(v, rc0))?),
             &[rc0, rc1] => ValueRegs::two(check(VReg::new(v, rc0))?, check(VReg::new(v + 1, rc1))?),
+            &[rc0, rc1, rc2, rc3] => ValueRegs::four(
+                check(VReg::new(v, rc0))?,
+                check(VReg::new(v + 1, rc1))?,
+                check(VReg::new(v + 2, rc2))?,
+                check(VReg::new(v + 3, rc3))?,
+            ),
             // We can extend this if/when we support 32-bit targets; e.g.,
             // an i128 on a 32-bit machine will need up to four machine regs
             // for a `Value`.
@@ -1795,6 +1801,12 @@ impl<I: VCodeInst> VRegAllocator<I> {
         match regclasses {
             &[rc0] => ValueRegs::one(VReg::new(0, rc0).into()),
             &[rc0, rc1] => ValueRegs::two(VReg::new(0, rc0).into(), VReg::new(1, rc1).into()),
+            &[rc0, rc1, rc2, rc3] => ValueRegs::four(
+                VReg::new(0, rc0).into(),
+                VReg::new(1, rc1).into(),
+                VReg::new(2, rc2).into(),
+                VReg::new(3, rc3).into(),
+            ),
             _ => panic!("Value must reside in 1 or 2 registers"),
         }
     }
