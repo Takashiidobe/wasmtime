@@ -94,6 +94,7 @@ impl PrettyPrint for Inst {
         match self {
             Inst::Nop => "nop".into(),
             Inst::Halt => "halt".into(),
+            Inst::Trap => "rst $10".into(),
             Inst::Move8 { dst, src } => format!("ld {}, {}", asm_reg(dst.to_reg()), asm_reg(*src)),
             Inst::Add8 { dst, lhs, rhs } => {
                 let lhs_enc = regs::hw_enc(*lhs);
@@ -632,8 +633,12 @@ impl MachInst for Inst {
 
     fn get_operands(&mut self, collector: &mut impl OperandVisitor) {
         match self {
-            Inst::Nop | Inst::Halt | Inst::Ret | Inst::JumpKnown { .. } | Inst::AdjustSP { .. } => {
-            }
+            Inst::Nop
+            | Inst::Halt
+            | Inst::Trap
+            | Inst::Ret
+            | Inst::JumpKnown { .. }
+            | Inst::AdjustSP { .. } => {}
             Inst::CallKnown { info } => {
                 let CallInfo {
                     uses,
@@ -854,8 +859,7 @@ impl MachInst for Inst {
     }
 
     fn is_trap(&self) -> bool {
-        // TODO: Detect trap instructions
-        false
+        matches!(self, Inst::Trap)
     }
 
     fn is_args(&self) -> bool {
@@ -996,11 +1000,7 @@ impl MachInst for Inst {
 
     type LabelUse = LabelUse;
 
-    const TRAP_OPCODE: &'static [u8] = &[
-        // TODO: Define the trap opcode for LR35902
-        // For now, we use HALT (0x76)
-        0x76,
-    ];
+    const TRAP_OPCODE: &'static [u8] = &[0xD7];
 }
 
 //=============================================================================

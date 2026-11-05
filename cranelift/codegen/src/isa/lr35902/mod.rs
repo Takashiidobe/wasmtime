@@ -225,7 +225,7 @@ mod lowering_tests {
     use crate::ir::immediates::Imm64;
     use crate::ir::{
         AbiParam, ExtFuncData, ExternalName, Function, GlobalValueData, InstBuilder, Signature,
-        StackSlotData, StackSlotKind, UserExternalName, UserFuncName, types,
+        StackSlotData, StackSlotKind, TrapCode, UserExternalName, UserFuncName, types,
     };
     use crate::isa::CallConv;
     use crate::machinst::CompiledCodeStencil;
@@ -234,6 +234,34 @@ mod lowering_tests {
     use core::str::FromStr;
     use cranelift_control::ControlPlane;
     use target_lexicon::Triple;
+
+    #[test]
+    fn lowers_user_trap_to_rst_10_vector() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 12), Signature::new(CallConv::Fast));
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        cursor.ins().trap(TrapCode::unwrap_user(1));
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let backend = isa_builder(Triple::from_str("z80-unknown-none").unwrap())
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.0.buffer.data(), &[0xD7]);
+    }
 
     #[test]
     fn compiles_i8_add_and_return_to_lr35902_machine_code() {

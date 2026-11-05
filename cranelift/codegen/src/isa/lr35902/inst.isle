@@ -4,6 +4,7 @@
     (Nop)
     ;; Suspends CPU operation until an interrupt or reset occurs.
     (Halt)
+    (Trap)
     (Move8 (dst WritableReg) (src Reg))
     (Add8 (dst WritableReg) (lhs Reg) (rhs Reg))
     (Add16 (accumulator WritableReg) (dst_low WritableReg) (dst_high WritableReg) (lhs_low Reg) (lhs_high Reg) (rhs_low Reg) (rhs_high Reg))

@@ -18,6 +18,7 @@ pub(crate) fn emit(
         Inst::Halt => {
             emit_halt(sink);
         }
+        Inst::Trap => sink.put1(0xD7),
         Inst::Move8 { dst, src } => {
             emit_ld_r_r(
                 sink,

@@ -14,6 +14,10 @@ impl LowerBackend for LR35902Backend {
 
     fn lower(&self, ctx: &mut Lower<Inst>, ir_inst: IRInst) -> Option<InstOutput> {
         match ctx.data(ir_inst).opcode() {
+            Opcode::Trap => {
+                ctx.emit(Inst::Trap);
+                Some(smallvec![])
+            }
             Opcode::StackAddr if ctx.output_ty(ir_inst, 0) == types::I16 => {
                 let stack_slot = ctx.data(ir_inst).stack_slot()?;
                 let offset = ctx.data(ir_inst).load_store_offset()?;
