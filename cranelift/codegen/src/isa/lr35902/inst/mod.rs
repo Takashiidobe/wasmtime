@@ -2,10 +2,10 @@
 
 use crate::binemit::{Addend, CodeOffset, Reloc};
 use crate::ir::{ExternalName, TrapCode, Type, types};
-use crate::isa::lr35902::settings as lr35902_settings;
 use crate::isa::FunctionAlignment;
-use crate::{CodegenError, CodegenResult, settings};
+use crate::isa::lr35902::settings as lr35902_settings;
 use crate::machinst::*;
+use crate::{CodegenError, CodegenResult, settings};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::slice;
@@ -13,9 +13,9 @@ use smallvec::{SmallVec, smallvec};
 use std::fmt::{self, Write};
 use std::string::{String, ToString};
 
-pub mod regs;
 mod emit;
 mod emit_state;
+pub mod regs;
 
 pub use emit_state::EmitState;
 use regs::*;
@@ -54,20 +54,12 @@ impl Inst {
     }
 
     /// Create a load instruction
-    pub(crate) fn load(
-        _ty: Type,
-        _from_addr: impl Into<Amode>,
-        _to_reg: Writable<Reg>,
-    ) -> Self {
+    pub(crate) fn load(_ty: Type, _from_addr: impl Into<Amode>, _to_reg: Writable<Reg>) -> Self {
         todo!("Implement load instruction constructor")
     }
 
     /// Create a store instruction
-    pub(crate) fn store(
-        _ty: Type,
-        _from_reg: Reg,
-        _to_addr: impl Into<Amode>,
-    ) -> Self {
+    pub(crate) fn store(_ty: Type, _from_reg: Reg, _to_addr: impl Into<Amode>) -> Self {
         todo!("Implement store instruction constructor")
     }
 
@@ -108,14 +100,22 @@ impl PrettyPrint for Inst {
 impl MachInst for Inst {
     type ABIMachineSpec = LR35902ABIMachineSpec;
 
-    fn get_operands(&mut self, _collector: &mut impl OperandVisitor) {
-        // TODO: Implement operand collection for register allocation
-        todo!("Implement get_operands")
+    fn get_operands(&mut self, collector: &mut impl OperandVisitor) {
+        match self {
+            Inst::Nop | Inst::Halt => {}
+            Inst::Move8 { dst, src } => {
+                collector.reg_use(src);
+                collector.reg_def(dst);
+            }
+            Inst::DummyUse { reg } => collector.reg_use(reg),
+        }
     }
 
     fn is_move(&self) -> Option<(Writable<Reg>, Reg)> {
-        // TODO: Detect register-to-register moves
-        None
+        match self {
+            Inst::Move8 { dst, src } => Some((*dst, *src)),
+            _ => None,
+        }
     }
 
     fn is_included_in_clobbers(&self) -> bool {
@@ -147,11 +147,12 @@ impl MachInst for Inst {
         false
     }
 
-    fn gen_move(dst_reg: Writable<Reg>, src_reg: Reg, _ty: Type) -> Inst {
-        // TODO: Generate register-to-register move
-        // For LR35902, this would typically be LD dst, src
-        let _ = (dst_reg, src_reg);
-        todo!("Implement gen_move")
+    fn gen_move(dst_reg: Writable<Reg>, src_reg: Reg, ty: Type) -> Inst {
+        debug_assert_eq!(ty, types::I8);
+        Inst::Move8 {
+            dst: dst_reg,
+            src: src_reg,
+        }
     }
 
     fn gen_nop(_preferred_size: usize) -> Inst {
@@ -164,17 +165,29 @@ impl MachInst for Inst {
             types::I16 => Ok((&[RegClass::Int, RegClass::Int], &[types::I8, types::I8])),
             types::I32 => Ok((
                 &[RegClass::Int, RegClass::Int, RegClass::Int, RegClass::Int],
-                &[types::I8, types::I8, types::I8, types::I8]
+                &[types::I8, types::I8, types::I8, types::I8],
             )),
             types::I64 => Ok((
                 &[
-                    RegClass::Int, RegClass::Int, RegClass::Int, RegClass::Int,
-                    RegClass::Int, RegClass::Int, RegClass::Int, RegClass::Int,
+                    RegClass::Int,
+                    RegClass::Int,
+                    RegClass::Int,
+                    RegClass::Int,
+                    RegClass::Int,
+                    RegClass::Int,
+                    RegClass::Int,
+                    RegClass::Int,
                 ],
                 &[
-                    types::I8, types::I8, types::I8, types::I8,
-                    types::I8, types::I8, types::I8, types::I8,
-                ]
+                    types::I8,
+                    types::I8,
+                    types::I8,
+                    types::I8,
+                    types::I8,
+                    types::I8,
+                    types::I8,
+                    types::I8,
+                ],
             )),
             // LR35902 doesn't have native floating-point support
             _ => Err(CodegenError::Unsupported(format!(
@@ -208,8 +221,8 @@ impl MachInst for Inst {
         panic!("LR35902 does not support floating-point operations")
     }
 
-    fn gen_dummy_use(_reg: Reg) -> Self {
-        todo!("Implement gen_dummy_use")
+    fn gen_dummy_use(reg: Reg) -> Self {
+        Inst::DummyUse { reg }
     }
 
     fn worst_case_size() -> CodeOffset {
@@ -246,7 +259,7 @@ impl MachInst for Inst {
     const TRAP_OPCODE: &'static [u8] = &[
         // TODO: Define the trap opcode for LR35902
         // For now, we use HALT (0x76)
-        0x76
+        0x76,
     ];
 }
 
@@ -302,22 +315,22 @@ impl MachInstLabelUse for LabelUse {
 
     fn max_pos_range(self) -> CodeOffset {
         match self {
-            LabelUse::JumpRel8 => 127,      // +127 bytes
-            LabelUse::JumpAbs16 => 0xFFFF,  // 64KB address space
+            LabelUse::JumpRel8 => 127,     // +127 bytes
+            LabelUse::JumpAbs16 => 0xFFFF, // 64KB address space
         }
     }
 
     fn max_neg_range(self) -> CodeOffset {
         match self {
-            LabelUse::JumpRel8 => 128,      // -128 bytes
-            LabelUse::JumpAbs16 => 0,       // Absolute addressing
+            LabelUse::JumpRel8 => 128, // -128 bytes
+            LabelUse::JumpAbs16 => 0,  // Absolute addressing
         }
     }
 
     fn patch_size(self) -> CodeOffset {
         match self {
-            LabelUse::JumpRel8 => 1,   // 8-bit offset
-            LabelUse::JumpAbs16 => 2,  // 16-bit address
+            LabelUse::JumpRel8 => 1,  // 8-bit offset
+            LabelUse::JumpAbs16 => 2, // 16-bit address
         }
     }
 
@@ -332,7 +345,7 @@ impl MachInstLabelUse for LabelUse {
             LabelUse::JumpAbs16 => {
                 // Store 16-bit address in little-endian format
                 let addr = label_offset as u16;
-                buffer[0] = (addr & 0xFF) as u8;        // Low byte
+                buffer[0] = (addr & 0xFF) as u8; // Low byte
                 buffer[1] = ((addr >> 8) & 0xFF) as u8; // High byte
             }
         }
@@ -383,5 +396,21 @@ pub enum Amode {
 impl From<Reg> for Amode {
     fn from(base: Reg) -> Self {
         Amode::RegIndirect { base }
+    }
+}
+
+#[cfg(test)]
+mod register_tests {
+    use super::*;
+
+    #[test]
+    fn integer_values_are_split_into_allocatable_bytes() {
+        let (classes, bytes) = <Inst as MachInst>::rc_for_type(&types::I16).unwrap();
+        assert_eq!(classes, &[RegClass::Int, RegClass::Int]);
+        assert_eq!(bytes, &[types::I8, types::I8]);
+
+        let (classes, bytes) = <Inst as MachInst>::rc_for_type(&types::I32).unwrap();
+        assert_eq!(classes, &[RegClass::Int; 4]);
+        assert_eq!(bytes, &[types::I8; 4]);
     }
 }

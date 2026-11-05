@@ -1,14 +1,7 @@
 //! Register definitions for LR35902.
 //!
-//! LR35902 has the following registers:
-//! - 8-bit general-purpose registers: A, B, C, D, E, H, L
-//! - 16-bit register pairs: BC, DE, HL, AF
-//! - 16-bit index registers: IX, IY (controlled by has_index_registers flag)
-//! - 16-bit special registers: SP (Stack Pointer), PC (Program Counter)
-//! - Shadow registers: AF', BC', DE', HL' (controlled by has_shadow_registers flag)
-
 use crate::Reg;
-use regalloc2::{VReg, PReg, RegClass};
+use regalloc2::{PReg, PRegSet, RegClass};
 
 /// LR35902 8-bit General Purpose Registers
 ///
@@ -32,6 +25,18 @@ pub enum Gpr8 {
     H = 0b100,
     L = 0b101,
     A = 0b111,
+}
+
+impl Gpr8 {
+    pub const ALL: [Self; 7] = [
+        Self::B,
+        Self::C,
+        Self::D,
+        Self::E,
+        Self::H,
+        Self::L,
+        Self::A,
+    ];
 }
 
 #[inline]
@@ -89,26 +94,62 @@ pub(crate) fn a() -> Reg {
 pub enum Gprp16 {
     BC = 0b00,
     DE = 0b01,
-}
-
-impl Gprp16 {
-    fn to_gpr8_high_low(self) -> (Gpr8, Gpr8) {
-        match self {
-            Gprp16::BC => (Gpr8::B, Gpr8::C),
-            Gprp16::DE => (Gpr8::D, Gpr8::E),
-        }
-    }
+    HL = 0b10,
+    AF = 0b11,
 }
 
 //=============================================================================
 // Register Constructor Helpers
 
 const fn gpr(r: Gpr8) -> Reg {
-    let preg = preg(r);
-    Reg::from_virtual_reg(VReg::new(preg.index(), RegClass::Int))
+    Reg::from_real_reg(preg(r))
 }
 
 #[inline]
 pub const fn preg(r: Gpr8) -> PReg {
     PReg::new(r as usize, RegClass::Int)
+}
+
+pub(crate) fn hw_enc(reg: Reg) -> u8 {
+    reg.to_real_reg()
+        .expect("LR35902 instruction register must be physical after allocation")
+        .hw_enc()
+}
+
+pub(crate) const fn allocatable_int_regs() -> PRegSet {
+    // pair instructions constrain their component bytes separately.
+    PRegSet::empty()
+        .with(preg(Gpr8::B))
+        .with(preg(Gpr8::C))
+        .with(preg(Gpr8::D))
+        .with(preg(Gpr8::E))
+        .with(preg(Gpr8::H))
+        .with(preg(Gpr8::L))
+        .with(preg(Gpr8::A))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn named_registers_are_real_and_keep_the_hardware_encoding() {
+        for reg in Gpr8::ALL {
+            let physical = gpr(reg).to_real_reg().unwrap();
+            assert_eq!(physical.hw_enc(), reg as u8);
+            assert_eq!(physical.class(), RegClass::Int);
+            assert_eq!(hw_enc(gpr(reg)), reg as u8);
+        }
+    }
+
+    #[test]
+    fn allocatable_set_contains_only_lr35902_byte_registers() {
+        let regs = allocatable_int_regs();
+        assert_eq!(regs.len(), Gpr8::ALL.len() as u32);
+        for reg in Gpr8::ALL {
+            assert!(regs.contains(preg(reg)));
+        }
+        assert!(!regs.contains(PReg::new(6, RegClass::Int)));
+        assert!(!regs.contains(PReg::new(8, RegClass::Int)));
+    }
 }

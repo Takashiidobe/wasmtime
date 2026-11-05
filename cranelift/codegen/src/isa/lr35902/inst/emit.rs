@@ -18,9 +18,14 @@ pub(crate) fn emit(
         Inst::Halt => {
             emit_halt(sink);
         }
-        _ => {
-            todo!()
+        Inst::Move8 { dst, src } => {
+            emit_ld_r_r(
+                sink,
+                super::regs::hw_enc(dst.to_reg()),
+                super::regs::hw_enc(*src),
+            );
         }
+        Inst::DummyUse { .. } => {}
     }
 }
 
@@ -54,7 +59,7 @@ fn emit_ld_rp_imm16(sink: &mut MachBuffer<Inst>, reg_hw_enc: u8, imm: u16) {
     debug_assert!(reg_hw_enc <= 3, "16-bit register encoding must be 0-3");
     let opcode = 0b00_000_001 | (reg_hw_enc << 4);
     sink.put1(opcode);
-    sink.put1((imm & 0x00FF) as u8);       // Low byte
+    sink.put1((imm & 0x00FF) as u8); // Low byte
     sink.put1(((imm & 0xFF00) >> 8) as u8); // High byte
 }
 
@@ -65,7 +70,10 @@ fn emit_ld_rp_imm16(sink: &mut MachBuffer<Inst>, reg_hw_enc: u8, imm: u16) {
 fn emit_ld_r_r(sink: &mut MachBuffer<Inst>, dst_hw_enc: u8, src_hw_enc: u8) {
     debug_assert!(dst_hw_enc <= 7 && src_hw_enc <= 7);
     // Note: 110 (6) is reserved for (HL) memory indirect
-    debug_assert!(dst_hw_enc != 6 && src_hw_enc != 6, "reg encoding 6 is for (HL)");
+    debug_assert!(
+        dst_hw_enc != 6 && src_hw_enc != 6,
+        "reg encoding 6 is for (HL)"
+    );
     let opcode = 0b01_000_000 | (dst_hw_enc << 3) | src_hw_enc;
     sink.put1(opcode);
 }
@@ -112,7 +120,7 @@ mod tests {
         // A = 7 (0b111), so opcode = 00_111_110 = 0x3E
         use crate::machinst::MachBuffer;
         let mut sink = MachBuffer::<Inst>::new();
-        emit_ld_r_imm8(&mut sink, 7, 0x2A);  // A=7, imm=42
+        emit_ld_r_imm8(&mut sink, 7, 0x2A); // A=7, imm=42
 
         let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
         assert_eq!(code.data(), &[0x3E, 0x2A]);
@@ -135,6 +143,29 @@ mod tests {
     }
 
     #[test]
+    fn test_register_move_emission() {
+        use crate::isa::lr35902::inst::regs;
+        use crate::machinst::{MachInst, Writable};
+
+        let inst = <Inst as MachInst>::gen_move(
+            Writable::from_reg(regs::a()),
+            regs::b(),
+            crate::ir::types::I8,
+        );
+        let flags = crate::settings::Flags::new(crate::settings::builder());
+        let isa_flags = crate::isa::lr35902::settings::Flags::new(
+            &flags,
+            &crate::isa::lr35902::settings::builder(),
+        );
+        let info = EmitInfo::new(flags, isa_flags);
+        let mut state = EmitState::default();
+        let mut sink = MachBuffer::<Inst>::new();
+        crate::machinst::MachInstEmit::emit(&inst, &mut sink, &info, &mut state);
+        let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
+        assert_eq!(code.data(), &[0x78]);
+    }
+
+    #[test]
     fn test_halt() {
         let mut sink = MachBuffer::<Inst>::new();
         emit_halt(&mut sink);
@@ -149,7 +180,7 @@ mod tests {
         // opcode = 01_111_000 = 0x78
         use crate::machinst::MachBuffer;
         let mut sink = MachBuffer::<Inst>::new();
-        emit_ld_r_r(&mut sink, 7, 0);  // dst=A=7, src=B=0
+        emit_ld_r_r(&mut sink, 7, 0); // dst=A=7, src=B=0
 
         let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
         assert_eq!(code.data(), &[0x78]);

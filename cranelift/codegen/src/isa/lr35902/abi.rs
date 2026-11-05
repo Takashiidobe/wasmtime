@@ -1,13 +1,13 @@
 //! LR35902 ABI implementation.
 
+use crate::CodegenResult;
 use crate::ir;
 use crate::ir::Signature;
-use crate::isa::lr35902::inst::Inst;
-use crate::isa::lr35902::settings as lr35902_settings;
 use crate::isa;
+use crate::isa::lr35902::inst::{Inst, regs};
+use crate::isa::lr35902::settings as lr35902_settings;
 use crate::machinst::*;
 use crate::settings;
-use crate::CodegenResult;
 use alloc::vec::Vec;
 use regalloc2::{MachineEnv, PRegSet};
 use smallvec::SmallVec;
@@ -95,7 +95,12 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
         todo!("LR35902 get_stacklimit_reg")
     }
 
-    fn gen_load_base_offset(_into_reg: Writable<Reg>, _base: Reg, _offset: i32, _ty: ir::Type) -> Self::I {
+    fn gen_load_base_offset(
+        _into_reg: Writable<Reg>,
+        _base: Reg,
+        _offset: i32,
+        _ty: ir::Type,
+    ) -> Self::I {
         todo!("LR35902 gen_load_base_offset")
     }
 
@@ -200,32 +205,26 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
     }
 
     fn get_number_of_spillslots_for_value(
-        _rc: RegClass,
+        rc: RegClass,
         _target_vector_bytes: u32,
         _isa_flags: &Self::F,
     ) -> u32 {
-        todo!("LR35902 get_number_of_spillslots_for_value")
+        u32::from(rc == RegClass::Int)
     }
 
     fn get_machine_env(_flags: &settings::Flags, _call_conv: isa::CallConv) -> &MachineEnv {
         use std::sync::OnceLock;
 
         static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-        MACHINE_ENV.get_or_init(|| {
-            MachineEnv {
-                preferred_regs_by_class: [
-                    PRegSet::empty(),
-                    PRegSet::empty(),
-                    PRegSet::empty(),
-                ],
-                non_preferred_regs_by_class: [
-                    PRegSet::empty(),
-                    PRegSet::empty(),
-                    PRegSet::empty(),
-                ],
-                scratch_by_class: [None, None, None],
-                fixed_stack_slots: vec![],
-            }
+        MACHINE_ENV.get_or_init(|| MachineEnv {
+            preferred_regs_by_class: [
+                regs::allocatable_int_regs(),
+                PRegSet::empty(),
+                PRegSet::empty(),
+            ],
+            non_preferred_regs_by_class: [PRegSet::empty(), PRegSet::empty(), PRegSet::empty()],
+            scratch_by_class: [None, None, None],
+            fixed_stack_slots: vec![],
         })
     }
 
@@ -246,5 +245,35 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
 
     fn retval_temp_reg(_call_conv_of_callee: isa::CallConv) -> Writable<Reg> {
         todo!("LR35902 retval_temp_reg")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn machine_env_allocates_the_seven_lr35902_byte_registers() {
+        let flags = settings::Flags::new(settings::builder());
+        let env = LR35902ABIMachineSpec::get_machine_env(&flags, isa::CallConv::Fast);
+        let allocatable = env.preferred_regs_by_class[RegClass::Int as usize];
+        assert_eq!(allocatable.len(), 7);
+        for reg in regs::Gpr8::ALL {
+            assert!(allocatable.contains(regs::preg(reg)));
+        }
+        assert!(env.preferred_regs_by_class[RegClass::Float as usize].len() == 0);
+        assert!(env.preferred_regs_by_class[RegClass::Vector as usize].len() == 0);
+    }
+
+    #[test]
+    fn integer_register_values_use_one_byte_per_spill_slot() {
+        let flags = lr35902_settings::Flags::new(
+            &settings::Flags::new(settings::builder()),
+            &lr35902_settings::builder(),
+        );
+        assert_eq!(
+            LR35902ABIMachineSpec::get_number_of_spillslots_for_value(RegClass::Int, 0, &flags,),
+            1
+        );
     }
 }

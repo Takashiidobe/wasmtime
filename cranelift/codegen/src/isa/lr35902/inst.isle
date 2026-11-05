@@ -4,4 +4,6 @@
     (Nop)
     ;; Suspends CPU operation until an interrupt or reset occurs.
     (Halt)
+    (Move8 (dst WritableReg) (src Reg))
+    (DummyUse (reg Reg))
 ))
