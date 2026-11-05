@@ -102,12 +102,22 @@ impl MachInst for Inst {
 
     fn get_operands(&mut self, collector: &mut impl OperandVisitor) {
         match self {
-            Inst::Nop | Inst::Halt => {}
+            Inst::Nop | Inst::Halt | Inst::Ret => {}
             Inst::Move8 { dst, src } => {
                 collector.reg_use(src);
                 collector.reg_def(dst);
             }
             Inst::DummyUse { reg } => collector.reg_use(reg),
+            Inst::Args { args } => {
+                for ArgPair { vreg, preg } in args {
+                    collector.reg_fixed_def(vreg, *preg);
+                }
+            }
+            Inst::Rets { rets } => {
+                for RetPair { vreg, preg } in rets {
+                    collector.reg_fixed_use(vreg, *preg);
+                }
+            }
         }
     }
 
@@ -119,8 +129,7 @@ impl MachInst for Inst {
     }
 
     fn is_included_in_clobbers(&self) -> bool {
-        // Most instructions should be included in clobbers
-        true
+        !matches!(self, Inst::Args { .. })
     }
 
     fn is_trap(&self) -> bool {
@@ -129,13 +138,14 @@ impl MachInst for Inst {
     }
 
     fn is_args(&self) -> bool {
-        // TODO: Detect Args pseudo-instruction
-        false
+        matches!(self, Inst::Args { .. })
     }
 
     fn is_term(&self) -> MachTerminator {
-        // TODO: Detect terminator instructions (ret, jmp, etc.)
-        MachTerminator::None
+        match self {
+            Inst::Rets { .. } => MachTerminator::Ret,
+            _ => MachTerminator::None,
+        }
     }
 
     fn is_low_level_branch(&self) -> bool {

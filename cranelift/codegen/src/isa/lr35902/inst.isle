@@ -6,4 +6,7 @@
     (Halt)
     (Move8 (dst WritableReg) (src Reg))
     (DummyUse (reg Reg))
+    (Args (args VecArgPair))
+    (Rets (rets VecRetPair))
+    (Ret)
 ))

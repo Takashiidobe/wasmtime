@@ -25,7 +25,8 @@ pub(crate) fn emit(
                 super::regs::hw_enc(*src),
             );
         }
-        Inst::DummyUse { .. } => {}
+        Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => {}
+        Inst::Ret => sink.put1(0xC9),
     }
 }
 
@@ -184,5 +185,20 @@ mod tests {
 
         let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
         assert_eq!(code.data(), &[0x78]);
+    }
+
+    #[test]
+    fn emits_return_opcode() {
+        let flags = crate::settings::Flags::new(crate::settings::builder());
+        let isa_flags = crate::isa::lr35902::settings::Flags::new(
+            &flags,
+            &crate::isa::lr35902::settings::builder(),
+        );
+        let info = EmitInfo::new(flags, isa_flags);
+        let mut state = EmitState::default();
+        let mut sink = MachBuffer::<Inst>::new();
+        crate::machinst::MachInstEmit::emit(&Inst::Ret, &mut sink, &info, &mut state);
+        let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
+        assert_eq!(code.data(), &[0xC9]);
     }
 }
