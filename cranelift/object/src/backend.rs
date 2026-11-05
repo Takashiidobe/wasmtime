@@ -40,6 +40,32 @@ pub struct ObjectBuilder {
 }
 
 impl ObjectBuilder {
+    /// create a module builder for callers that use `ObjectModule` to compile
+    /// functions but emit a different output format instead of serializing an object.
+    pub fn new_for_assembly<V: Into<Vec<u8>>>(
+        isa: OwnedTargetIsa,
+        name: V,
+        libcall_names: Box<dyn Fn(ir::LibCall) -> String + Send + Sync>,
+    ) -> ModuleResult<Self> {
+        let endian = match isa.triple().endianness().unwrap() {
+            target_lexicon::Endianness::Little => object::Endianness::Little,
+            target_lexicon::Endianness::Big => object::Endianness::Big,
+        };
+        Ok(Self {
+            isa,
+            binary_format: object::BinaryFormat::Elf,
+            architecture: object::Architecture::Unknown,
+            flags: object::FileFlags::None,
+            endian,
+            name: name.into(),
+            libcall_names,
+            per_function_section: false,
+            per_data_object_section: false,
+            #[cfg(feature = "unwind")]
+            unwind_info: false,
+        })
+    }
+
     /// Create a new `ObjectBuilder` using the given Cranelift target, that
     /// can be passed to [`ObjectModule::new`].
     ///
