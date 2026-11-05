@@ -885,7 +885,7 @@ impl<'a> FunctionBuilder<'a> {
         mut flags: MemFlagsData,
     ) {
         // Currently the result of guess work, not actual profiling.
-        const THRESHOLD: u64 = 4;
+        const THRESHOLD_BYTES: u64 = 32;
 
         if size == 0 {
             return;
@@ -901,15 +901,12 @@ impl<'a> FunctionBuilder<'a> {
             "`size` is smaller than `dest` and `src`'s alignment value."
         );
 
-        let (access_size, int_type) = if access_size <= 8 {
-            (access_size, Type::int((access_size * 8) as u16).unwrap())
-        } else {
-            (8, types::I64)
-        };
+        let access_size = access_size.min(u64::from(config.pointer_bytes()));
+        let int_type = Type::int((access_size * 8) as u16).unwrap();
 
         let load_and_store_amount = size / access_size;
 
-        if load_and_store_amount > THRESHOLD {
+        if size > THRESHOLD_BYTES {
             let size_value = self.ins().iconst(config.pointer_type(), size as i64);
             if non_overlapping {
                 self.call_memcpy(config, dest, src, size_value);
@@ -925,7 +922,8 @@ impl<'a> FunctionBuilder<'a> {
 
         // Load all of the memory first. This is necessary in case `dest` overlaps.
         // It can also improve performance a bit.
-        let registers: smallvec::SmallVec<[_; THRESHOLD as usize]> = (0..load_and_store_amount)
+        let registers: smallvec::SmallVec<[_; THRESHOLD_BYTES as usize]> = (0
+            ..load_and_store_amount)
             .map(|i| {
                 let offset = (access_size * i) as i32;
                 (self.ins().load(int_type, flags, src, offset), offset)
@@ -1455,6 +1453,50 @@ block0:
 }
 ",
         );
+    }
+
+    #[test]
+    fn small_memcpy_uses_pointer_sized_chunks() {
+        let frontend_config = TargetFrontendConfig {
+            default_call_conv: CallConv::Fast,
+            pointer_width: PointerWidth::U16,
+            page_size_align_log2: 12,
+        };
+        let mut sig = Signature::new(frontend_config.default_call_conv);
+        sig.params = vec![
+            AbiParam::new(frontend_config.pointer_type()),
+            AbiParam::new(frontend_config.pointer_type()),
+        ];
+
+        let mut fn_ctx = FunctionBuilderContext::new();
+        let mut func = Function::with_name_signature(UserFuncName::testcase("small_copy_16"), sig);
+        {
+            let mut builder = FunctionBuilder::new(&mut func, &mut fn_ctx);
+            let block = builder.create_block();
+            builder.append_block_params_for_function_params(block);
+            builder.switch_to_block(block);
+            let [src, dest] = builder.block_params(block) else {
+                panic!("expected two pointer parameters");
+            };
+            builder.emit_small_memory_copy(
+                frontend_config,
+                *dest,
+                *src,
+                24,
+                2,
+                2,
+                true,
+                MemFlagsData::new(),
+            );
+            builder.ins().return_(&[]);
+            builder.seal_all_blocks();
+            builder.finalize(frontend_config);
+        }
+
+        let ir = func.display().to_string();
+        assert!(!ir.contains("i64"), "{ir}");
+        assert_eq!(ir.matches("load.i16").count(), 12, "{ir}");
+        assert_eq!(ir.matches("store").count(), 12, "{ir}");
     }
 
     #[test]
