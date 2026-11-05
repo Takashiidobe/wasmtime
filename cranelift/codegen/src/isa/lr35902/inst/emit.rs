@@ -25,9 +25,53 @@ pub(crate) fn emit(
                 super::regs::hw_enc(*src),
             );
         }
+        Inst::Add8 { dst, lhs, rhs } => {
+            let a = super::regs::Gpr8::A as u8;
+            if super::regs::hw_enc(*lhs) == a {
+                sink.put1(0x80 | super::regs::hw_enc(*rhs));
+            } else if super::regs::hw_enc(*rhs) == a {
+                sink.put1(0x80 | super::regs::hw_enc(*lhs));
+            } else {
+                emit_ld_r_r(sink, a, super::regs::hw_enc(*lhs));
+                sink.put1(0x80 | super::regs::hw_enc(*rhs));
+            }
+            if super::regs::hw_enc(dst.to_reg()) != a {
+                emit_ld_r_r(sink, super::regs::hw_enc(dst.to_reg()), a);
+            }
+        }
+        Inst::LoadImm8 { dst, imm } => {
+            emit_ld_r_imm8(sink, super::regs::hw_enc(dst.to_reg()), *imm)
+        }
+        Inst::LoadStack8 { dst, offset } => {
+            emit_stack_address(sink, *offset);
+            sink.put1(0x7E);
+            if super::regs::hw_enc(dst.to_reg()) != super::regs::Gpr8::A as u8 {
+                emit_ld_r_r(
+                    sink,
+                    super::regs::hw_enc(dst.to_reg()),
+                    super::regs::Gpr8::A as u8,
+                );
+            }
+        }
+        Inst::StoreStack8 { src, offset } => {
+            if super::regs::hw_enc(*src) != super::regs::Gpr8::A as u8 {
+                emit_ld_r_r(sink, super::regs::Gpr8::A as u8, super::regs::hw_enc(*src));
+            }
+            emit_stack_address(sink, *offset);
+            sink.put1(0x77);
+        }
+        Inst::AdjustSP { amount } => {
+            sink.put1(0xE8);
+            sink.put1(*amount as u8);
+        }
         Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => {}
         Inst::Ret => sink.put1(0xC9),
     }
+}
+
+fn emit_stack_address(sink: &mut MachBuffer<Inst>, offset: i8) {
+    sink.put1(0xF8);
+    sink.put1(offset as u8);
 }
 
 /// Emit a NOP instruction (0x00)

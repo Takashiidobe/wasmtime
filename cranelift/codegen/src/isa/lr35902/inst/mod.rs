@@ -64,8 +64,16 @@ impl Inst {
     }
 
     /// Create an immediate load instruction
-    pub fn imm(_imm_val: u8, _dst: Writable<Reg>) -> Inst {
-        todo!("Implement immediate load constructor")
+    pub fn imm(imm_val: u8, dst: Writable<Reg>) -> Inst {
+        Inst::LoadImm8 { dst, imm: imm_val }
+    }
+
+    pub(crate) fn load_stack(offset: i8, dst: Writable<Reg>) -> Inst {
+        Inst::LoadStack8 { dst, offset }
+    }
+
+    pub(crate) fn store_stack(offset: i8, src: Reg) -> Inst {
+        Inst::StoreStack8 { src, offset }
     }
 
     /// Create a call to a known function
@@ -102,10 +110,25 @@ impl MachInst for Inst {
 
     fn get_operands(&mut self, collector: &mut impl OperandVisitor) {
         match self {
-            Inst::Nop | Inst::Halt | Inst::Ret => {}
+            Inst::Nop | Inst::Halt | Inst::Ret | Inst::AdjustSP { .. } => {}
             Inst::Move8 { dst, src } => {
                 collector.reg_use(src);
                 collector.reg_def(dst);
+            }
+            Inst::Add8 { dst, lhs, rhs } => {
+                collector.reg_use(lhs);
+                collector.reg_use(rhs);
+                collector.reg_def(dst);
+                collector.reg_clobbers(regs::preg_set(regs::Gpr8::A));
+            }
+            Inst::LoadImm8 { dst, .. } => collector.reg_def(dst),
+            Inst::LoadStack8 { dst, .. } => {
+                collector.reg_def(dst);
+                collector.reg_clobbers(regs::stack_access_clobbers());
+            }
+            Inst::StoreStack8 { src, .. } => {
+                collector.reg_use(src);
+                collector.reg_clobbers(regs::stack_access_clobbers());
             }
             Inst::DummyUse { reg } => collector.reg_use(reg),
             Inst::Args { args } => {
@@ -153,8 +176,7 @@ impl MachInst for Inst {
     }
 
     fn is_mem_access(&self) -> bool {
-        // TODO: Detect memory access instructions
-        false
+        matches!(self, Inst::LoadStack8 { .. } | Inst::StoreStack8 { .. })
     }
 
     fn gen_move(dst_reg: Writable<Reg>, src_reg: Reg, ty: Type) -> Inst {
@@ -236,8 +258,7 @@ impl MachInst for Inst {
     }
 
     fn worst_case_size() -> CodeOffset {
-        // LR35902 instructions are at most 4 bytes (with displacement and immediate)
-        4
+        8
     }
 
     fn call_type(&self) -> CallType {

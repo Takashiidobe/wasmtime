@@ -106,12 +106,26 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
         Ok((0, None))
     }
 
-    fn gen_load_stack(_mem: StackAMode, _into_reg: Writable<Reg>, _ty: ir::Type) -> Self::I {
-        todo!("LR35902 gen_load_stack")
+    fn gen_load_stack(mem: StackAMode, into_reg: Writable<Reg>, ty: ir::Type) -> Self::I {
+        assert_eq!(ty, ir::types::I8);
+        match mem {
+            StackAMode::Slot(offset) => Inst::load_stack(
+                i8::try_from(offset).expect("LR35902 stack slot offset exceeds signed byte range"),
+                into_reg,
+            ),
+            _ => panic!("LR35902 only supports frame-relative stack loads"),
+        }
     }
 
-    fn gen_store_stack(_mem: StackAMode, _from_reg: Reg, _ty: ir::Type) -> Self::I {
-        todo!("LR35902 gen_store_stack")
+    fn gen_store_stack(mem: StackAMode, from_reg: Reg, ty: ir::Type) -> Self::I {
+        assert_eq!(ty, ir::types::I8);
+        match mem {
+            StackAMode::Slot(offset) => Inst::store_stack(
+                i8::try_from(offset).expect("LR35902 stack slot offset exceeds signed byte range"),
+                from_reg,
+            ),
+            _ => panic!("LR35902 only supports frame-relative stack stores"),
+        }
     }
 
     fn gen_move(to_reg: Writable<Reg>, from_reg: Reg, ty: ir::Type) -> Self::I {
@@ -170,8 +184,18 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
         todo!("LR35902 gen_store_base_offset")
     }
 
-    fn gen_sp_reg_adjust(_amount: i32) -> SmallInstVec<Self::I> {
-        todo!("LR35902 gen_sp_reg_adjust")
+    fn gen_sp_reg_adjust(mut amount: i32) -> SmallInstVec<Self::I> {
+        let mut insts = SmallInstVec::new();
+        while amount != 0 {
+            let step = amount.clamp(i8::MIN as i32, i8::MAX as i32);
+            insts.push(Inst::AdjustSP { amount: step as i8 });
+            amount -= step;
+        }
+        insts
+    }
+
+    fn maximum_frame_size() -> u32 {
+        128
     }
 
     fn compute_frame_layout(
@@ -180,23 +204,23 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
         _sig: &Signature,
         _regs: &[Writable<RealReg>],
         function_calls: FunctionCalls,
-        _incoming_args_size: u32,
-        _tail_args_size: u32,
-        _stackslots_size: u32,
-        _fixed_frame_storage_size: u32,
-        _outgoing_args_size: u32,
+        incoming_args_size: u32,
+        tail_args_size: u32,
+        stackslots_size: u32,
+        fixed_frame_storage_size: u32,
+        outgoing_args_size: u32,
     ) -> FrameLayout {
         // TODO: Implement proper frame layout computation
         FrameLayout {
             word_bytes: Self::word_bytes(),
             function_calls,
-            incoming_args_size: 0,
-            tail_args_size: 0,
+            incoming_args_size,
+            tail_args_size,
             setup_area_size: 0,
             clobber_size: 0,
-            fixed_frame_storage_size: 0,
-            outgoing_args_size: 0,
-            stackslots_size: 0,
+            fixed_frame_storage_size,
+            outgoing_args_size,
+            stackslots_size,
             clobbered_callee_saves: vec![],
         }
     }
@@ -243,17 +267,25 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
     fn gen_clobber_save(
         _call_conv: isa::CallConv,
         _flags: &settings::Flags,
-        _frame_layout: &FrameLayout,
+        frame_layout: &FrameLayout,
     ) -> SmallVec<[Self::I; 16]> {
-        SmallVec::new()
+        let mut insts = SmallVec::new();
+        insts.extend(Self::gen_sp_reg_adjust(
+            -((frame_layout.fixed_frame_storage_size + frame_layout.outgoing_args_size) as i32),
+        ));
+        insts
     }
 
     fn gen_clobber_restore(
         _call_conv: isa::CallConv,
         _flags: &settings::Flags,
-        _frame_layout: &FrameLayout,
+        frame_layout: &FrameLayout,
     ) -> SmallVec<[Self::I; 16]> {
-        SmallVec::new()
+        let mut insts = SmallVec::new();
+        insts.extend(Self::gen_sp_reg_adjust(
+            (frame_layout.fixed_frame_storage_size + frame_layout.outgoing_args_size) as i32,
+        ));
+        insts
     }
 
     fn gen_memcpy<F: FnMut(ir::Type) -> Writable<Reg>>(

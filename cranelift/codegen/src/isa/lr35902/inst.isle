@@ -5,6 +5,11 @@
     ;; Suspends CPU operation until an interrupt or reset occurs.
     (Halt)
     (Move8 (dst WritableReg) (src Reg))
+    (Add8 (dst WritableReg) (lhs Reg) (rhs Reg))
+    (LoadImm8 (dst WritableReg) (imm u8))
+    (LoadStack8 (dst WritableReg) (offset i8))
+    (StoreStack8 (src Reg) (offset i8))
+    (AdjustSP (amount i8))
     (DummyUse (reg Reg))
     (Args (args VecArgPair))
     (Rets (rets VecRetPair))

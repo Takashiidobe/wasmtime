@@ -214,3 +214,95 @@ fn isa_constructor(
     let backend = LR35902Backend::new_with_flags(triple, shared_flags, isa_flags);
     Ok(backend.wrapped())
 }
+
+#[cfg(all(test, feature = "lr35902"))]
+mod lowering_tests {
+    use super::isa_builder;
+    use crate::cursor::Cursor;
+    use crate::dominator_tree::DominatorTree;
+    use crate::flowgraph::ControlFlowGraph;
+    use crate::ir::{Function, InstBuilder, Signature, UserFuncName, types};
+    use crate::isa::CallConv;
+    use crate::machinst::CompiledCodeStencil;
+    use crate::settings;
+    use alloc::vec::Vec;
+    use core::str::FromStr;
+    use cranelift_control::ControlPlane;
+    use target_lexicon::Triple;
+
+    #[test]
+    fn compiles_i8_add_and_return_to_lr35902_machine_code() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 0), Signature::new(CallConv::Fast));
+        func.signature
+            .returns
+            .push(crate::ir::AbiParam::new(types::I8));
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let lhs = cursor.ins().iconst(types::I8, 5);
+        let rhs = cursor.ins().iconst(types::I8, 7);
+        let sum = cursor.ins().iadd(lhs, rhs);
+        cursor.ins().return_(&[sum]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let shared_flags = settings::Flags::new(settings::builder());
+        let backend = isa_builder(triple).finish(shared_flags).unwrap();
+        let mut regalloc_ctx = regalloc2::Ctx::default();
+        let result: CompiledCodeStencil = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc_ctx,
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.0.buffer.data().last(), Some(&0xC9));
+    }
+    #[test]
+    fn compiles_i8_add_with_spills() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 1), Signature::new(CallConv::Fast));
+        func.signature
+            .returns
+            .push(crate::ir::AbiParam::new(types::I8));
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let mut values = Vec::new();
+        for imm in 1..=12 {
+            values.push(cursor.ins().iconst(types::I8, imm));
+        }
+        let mut sum = values[0];
+        for value in values.into_iter().skip(1) {
+            sum = cursor.ins().iadd(sum, value);
+        }
+        cursor.ins().return_(&[sum]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let mut regalloc_ctx = regalloc2::Ctx::default();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc_ctx,
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+
+        assert!(result.0.buffer.data().contains(&0xF8));
+        assert_eq!(result.0.buffer.data().last(), Some(&0xC9));
+    }
+}

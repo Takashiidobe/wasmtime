@@ -1,8 +1,11 @@
-use crate::ir::Inst as IRInst;
+use crate::ir::{Inst as IRInst, Opcode, types};
 use crate::isa::lr35902::LR35902Backend;
 use crate::isa::lr35902::inst::*;
+use crate::machinst::Reg;
 use crate::machinst::lower::*;
-use crate::machinst::*;
+use crate::machinst::{Lower, MachLabel, ValueRegs};
+use alloc::vec::Vec;
+use smallvec::smallvec;
 
 pub mod isle;
 
@@ -10,16 +13,40 @@ impl LowerBackend for LR35902Backend {
     type MInst = Inst;
 
     fn lower(&self, ctx: &mut Lower<Inst>, ir_inst: IRInst) -> Option<InstOutput> {
-        isle::lower(ctx, self, ir_inst)
+        match ctx.data(ir_inst).opcode() {
+            Opcode::Iconst if ctx.output_ty(ir_inst, 0) == types::I8 => {
+                let imm = u8::try_from(ctx.get_constant(ir_inst)?).ok()?;
+                let dst = ctx.alloc_tmp(types::I8).only_reg()?;
+                ctx.emit(Inst::imm(imm, dst));
+                Some(smallvec![ValueRegs::one(dst.to_reg())])
+            }
+            Opcode::Return => {
+                let args = ctx.dfg().inst_args(ir_inst).to_vec();
+                let rets = args
+                    .into_iter()
+                    .map(|value| ctx.put_value_in_regs(value))
+                    .collect::<Vec<_>>();
+                ctx.gen_return(&rets);
+                Some(smallvec![])
+            }
+            Opcode::Iadd if ctx.output_ty(ir_inst, 0) == types::I8 => {
+                let lhs = ctx.put_input_in_regs(ir_inst, 0).only_reg()?;
+                let rhs = ctx.put_input_in_regs(ir_inst, 1).only_reg()?;
+                let dst = ctx.alloc_tmp(types::I8).only_reg()?;
+                ctx.emit(Inst::Add8 { dst, lhs, rhs });
+                Some(smallvec![ValueRegs::one(dst.to_reg())])
+            }
+            _ => None,
+        }
     }
 
     fn lower_branch(
         &self,
-        ctx: &mut Lower<Inst>,
-        ir_inst: IRInst,
-        targets: &[MachLabel],
+        _ctx: &mut Lower<Inst>,
+        _ir_inst: IRInst,
+        _targets: &[MachLabel],
     ) -> Option<()> {
-        isle::lower_branch(ctx, self, ir_inst, targets)
+        None
     }
 
     fn maybe_pinned_reg(&self) -> Option<Reg> {

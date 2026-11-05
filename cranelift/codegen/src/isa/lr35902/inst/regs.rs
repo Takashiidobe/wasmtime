@@ -116,6 +116,17 @@ pub(crate) fn hw_enc(reg: Reg) -> u8 {
         .hw_enc()
 }
 
+pub(crate) const fn preg_set(reg: Gpr8) -> PRegSet {
+    PRegSet::empty().with(preg(reg))
+}
+
+pub(crate) const fn stack_access_clobbers() -> PRegSet {
+    PRegSet::empty()
+        .with(preg(Gpr8::A))
+        .with(preg(Gpr8::H))
+        .with(preg(Gpr8::L))
+}
+
 pub(crate) const fn allocatable_int_regs() -> PRegSet {
     // pair instructions constrain their component bytes separately.
     PRegSet::empty()
