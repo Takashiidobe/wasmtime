@@ -113,7 +113,33 @@ impl PrettyPrint for Inst {
                 }
                 lines.join("\n")
             }
+            Inst::Add16 {
+                accumulator: _,
+                dst_low,
+                dst_high,
+                lhs_low,
+                lhs_high,
+                rhs_low,
+                rhs_high,
+            } => [
+                asm_accumulator_op("add", dst_low.to_reg(), *lhs_low, *rhs_low),
+                asm_accumulator_op("adc", dst_high.to_reg(), *lhs_high, *rhs_high),
+            ]
+            .join("\n"),
             Inst::Sub8 { dst, lhs, rhs } => asm_accumulator_op("sub", dst.to_reg(), *lhs, *rhs),
+            Inst::Sub16 {
+                accumulator: _,
+                dst_low,
+                dst_high,
+                lhs_low,
+                lhs_high,
+                rhs_low,
+                rhs_high,
+            } => [
+                asm_accumulator_op("sub", dst_low.to_reg(), *lhs_low, *rhs_low),
+                asm_accumulator_op("sbc", dst_high.to_reg(), *lhs_high, *rhs_high),
+            ]
+            .join("\n"),
             Inst::And8 { dst, lhs, rhs } => asm_accumulator_op("and", dst.to_reg(), *lhs, *rhs),
             Inst::Or8 { dst, lhs, rhs } => asm_accumulator_op("or", dst.to_reg(), *lhs, *rhs),
             Inst::Xor8 { dst, lhs, rhs } => asm_accumulator_op("xor", dst.to_reg(), *lhs, *rhs),
@@ -165,7 +191,11 @@ fn asm_accumulator_op(op: &str, dst: Reg, lhs: Reg, rhs: Reg) -> String {
     if regs::hw_enc(lhs) != a {
         lines.push(format!("ld a, {}", asm_reg(lhs)));
     }
-    lines.push(format!("{op} {}", asm_reg(rhs)));
+    if op == "add" || op == "adc" {
+        lines.push(format!("{op} a, {}", asm_reg(rhs)));
+    } else {
+        lines.push(format!("{op} {}", asm_reg(rhs)));
+    }
     if regs::hw_enc(dst) != a {
         lines.push(format!("ld {}, a", asm_reg(dst)));
     }
@@ -321,6 +351,32 @@ impl MachInst for Inst {
                 collector.reg_use(rhs);
                 collector.reg_def(dst);
                 collector.reg_clobbers(regs::preg_set(regs::Gpr8::A));
+            }
+            Inst::Add16 {
+                accumulator,
+                dst_low,
+                dst_high,
+                lhs_low,
+                lhs_high,
+                rhs_low,
+                rhs_high,
+            }
+            | Inst::Sub16 {
+                accumulator,
+                dst_low,
+                dst_high,
+                lhs_low,
+                lhs_high,
+                rhs_low,
+                rhs_high,
+            } => {
+                collector.reg_fixed_early_def(accumulator, regs::a());
+                collector.reg_use(lhs_low);
+                collector.reg_use(lhs_high);
+                collector.reg_use(rhs_low);
+                collector.reg_use(rhs_high);
+                collector.reg_early_def(dst_low);
+                collector.reg_def(dst_high);
             }
             Inst::Sub8 { dst, lhs, rhs }
             | Inst::And8 { dst, lhs, rhs }

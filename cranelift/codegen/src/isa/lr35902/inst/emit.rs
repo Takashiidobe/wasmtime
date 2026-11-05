@@ -39,7 +39,31 @@ pub(crate) fn emit(
                 emit_ld_r_r(sink, super::regs::hw_enc(dst.to_reg()), a);
             }
         }
+        Inst::Add16 {
+            accumulator: _,
+            dst_low,
+            dst_high,
+            lhs_low,
+            lhs_high,
+            rhs_low,
+            rhs_high,
+        } => {
+            emit_accumulator_op(sink, 0x80, dst_low, lhs_low, rhs_low);
+            emit_accumulator_op(sink, 0x88, dst_high, lhs_high, rhs_high);
+        }
         Inst::Sub8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0x90, dst, lhs, rhs),
+        Inst::Sub16 {
+            accumulator: _,
+            dst_low,
+            dst_high,
+            lhs_low,
+            lhs_high,
+            rhs_low,
+            rhs_high,
+        } => {
+            emit_accumulator_op(sink, 0x90, dst_low, lhs_low, rhs_low);
+            emit_accumulator_op(sink, 0x98, dst_high, lhs_high, rhs_high);
+        }
         Inst::And8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xA0, dst, lhs, rhs),
         Inst::Xor8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xA8, dst, lhs, rhs),
         Inst::Or8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xB0, dst, lhs, rhs),

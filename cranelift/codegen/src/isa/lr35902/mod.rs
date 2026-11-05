@@ -429,6 +429,44 @@ mod lowering_tests {
     }
 
     #[test]
+    fn compiles_i16_arithmetic_and_bitwise_ops_to_lr35902_machine_code() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 6), Signature::new(CallConv::Fast));
+        func.signature.returns.push(AbiParam::new(types::I16));
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let lhs = cursor.ins().iconst(types::I16, 0x12FF);
+        let rhs = cursor.ins().iconst(types::I16, 0x0001);
+        let sum = cursor.ins().iadd(lhs, rhs);
+        let diff = cursor.ins().isub(sum, lhs);
+        let result = cursor.ins().band(diff, rhs);
+        cursor.ins().return_(&[result]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+        let code = result.0.buffer.data();
+
+        assert!(code.iter().any(|byte| (0x88..=0x8F).contains(byte)));
+        assert!(code.iter().any(|byte| (0x98..=0x9F).contains(byte)));
+        assert_eq!(code.last(), Some(&0xC9));
+    }
+
+    #[test]
     fn compiles_i8_add_with_spills() {
         let mut func =
             Function::with_name_signature(UserFuncName::user(0, 1), Signature::new(CallConv::Fast));
