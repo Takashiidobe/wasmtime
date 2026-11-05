@@ -149,7 +149,7 @@ impl PrettyPrint for Inst {
             }
             Inst::AdjustSP { amount } => format!("add sp, {amount}"),
             Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => String::new(),
-            Inst::JumpKnown { dst } => format!("jp {dst:?}"),
+            Inst::JumpKnown { dst } => format!("jp {}", dst.to_string()),
             Inst::Ret => "ret".into(),
         }
     }
