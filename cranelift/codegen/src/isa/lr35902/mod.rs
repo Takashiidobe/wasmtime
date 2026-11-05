@@ -4,14 +4,14 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use std::string::String;
 use cranelift_control::ControlPlane;
+use std::string::String;
 use target_lexicon::Triple;
 
 use crate::ir;
 use crate::isa::Builder as IsaBuilder;
 use crate::isa::lr35902::settings as lr35902_settings;
-use crate::machinst::CompiledCode;
+use crate::machinst::{CompiledCode, SigSet, compile};
 use crate::settings::{self as shared_settings, Flags};
 use crate::{
     CodegenResult, dominator_tree::DominatorTree, ir::Function, machinst::CompiledCodeStencil,
@@ -19,11 +19,11 @@ use crate::{
 
 use super::{FunctionAlignment, IsaFlagsHashKey, OwnedTargetIsa, TargetIsa};
 
-pub mod settings;
 pub(crate) mod abi;
-pub(crate) mod sdcc;
-mod lower;
 mod inst;
+mod lower;
+pub(crate) mod sdcc;
+pub mod settings;
 
 pub(crate) struct LR35902Backend {
     triple: Triple,
@@ -33,7 +33,11 @@ pub(crate) struct LR35902Backend {
 
 impl LR35902Backend {
     /// Create a new LR35902 backend with the given (shared) flags.
-    fn new_with_flags(triple: Triple, flags: Flags, lr35902_flags: lr35902_settings::Flags) -> Self {
+    fn new_with_flags(
+        triple: Triple,
+        flags: Flags,
+        lr35902_flags: lr35902_settings::Flags,
+    ) -> Self {
         Self {
             triple,
             flags,
@@ -45,15 +49,38 @@ impl LR35902Backend {
 impl TargetIsa for LR35902Backend {
     fn compile_function(
         &self,
-        _func: &Function,
-        _domtree: &DominatorTree,
-        _regalloc_ctx: &mut regalloc2::Ctx,
-        _want_disasm: bool,
-        _ctrl_plane: &mut ControlPlane,
+        func: &Function,
+        domtree: &DominatorTree,
+        regalloc_ctx: &mut regalloc2::Ctx,
+        want_disasm: bool,
+        ctrl_plane: &mut ControlPlane,
     ) -> CodegenResult<CompiledCodeStencil> {
-        Err(crate::CodegenError::Unsupported(
-            "LR35902 function lowering is not implemented".into(),
-        ))
+        let emit_info = inst::EmitInfo::new(self.flags.clone(), self.lr35902_flags.clone());
+        let sigs = SigSet::new::<abi::LR35902ABIMachineSpec>(func, &self.flags)?;
+        let abi = crate::machinst::abi::Callee::<abi::LR35902ABIMachineSpec>::new(
+            func,
+            self,
+            &self.lr35902_flags,
+            &sigs,
+        )?;
+        let vcode = compile::<Self>(
+            func,
+            domtree,
+            regalloc_ctx,
+            self,
+            abi,
+            emit_info,
+            sigs,
+            ctrl_plane,
+        )?;
+        let emit_result = vcode.emit(&regalloc_ctx.output, want_disasm, &self.flags, ctrl_plane)?;
+        Ok(CompiledCodeStencil(CompiledCode {
+            buffer: emit_result.buffer,
+            vcode: emit_result.disasm,
+            value_labels_ranges: emit_result.value_labels_ranges,
+            bb_starts: emit_result.bb_offsets,
+            bb_edges: emit_result.bb_edges,
+        }))
     }
 
     fn flags(&self) -> &Flags {

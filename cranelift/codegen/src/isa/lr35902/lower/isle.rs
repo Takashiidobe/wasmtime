@@ -2,9 +2,9 @@ pub mod generated_code;
 use generated_code::MInst;
 
 // Types that the generated ISLE code uses via `use super::*`.
-use crate::ir::{condcodes::*, immediates::*, types::*, *, Inst};
+use crate::ir::{Inst, condcodes::*, immediates::*, types::*, *};
+use crate::isa::lr35902::inst::{regs, *};
 use crate::isa::lr35902::*;
-use crate::isa::lr35902::inst::{*, regs};
 use crate::machinst::{
     CallArgList, CallInfo, CallRetList, MachInst, Reg, VCodeConstant, VCodeConstantData,
     abi::{ArgPair, RetPair, StackAMode},
@@ -17,7 +17,7 @@ type VecArgPair = Vec<ArgPair>;
 type VecRetPair = Vec<RetPair>;
 
 pub(crate) struct LR35902IsleContext<'a, 'b, I, B>
-where 
+where
     I: VCodeInst,
     B: LowerBackend,
 {
@@ -26,10 +26,7 @@ where
 }
 
 impl<'a, 'b> LR35902IsleContext<'a, 'b, MInst, LR35902Backend> {
-    fn new(
-        lower_ctx: &'a mut Lower<'b, MInst>,
-        backend: &'a LR35902Backend,
-    ) -> Self {
+    fn new(lower_ctx: &'a mut Lower<'b, MInst>, backend: &'a LR35902Backend) -> Self {
         Self { lower_ctx, backend }
     }
 
@@ -41,11 +38,10 @@ impl<'a, 'b> LR35902IsleContext<'a, 'b, MInst, LR35902Backend> {
 pub(crate) fn lower(
     lower_ctx: &mut Lower<MInst>,
     backend: &LR35902Backend,
-    inst: Inst
+    inst: Inst,
 ) -> Option<InstOutput> {
     let mut isle_ctx = LR35902IsleContext::new(lower_ctx, backend);
-    todo!("constructor_lower")
-    // generated_code::constructor_lower(&mut isle_ctx, inst)
+    todo!("LR35902 CLIF instruction lowering")
 }
 
 pub(crate) fn lower_branch(
@@ -55,6 +51,5 @@ pub(crate) fn lower_branch(
     targets: &[MachLabel],
 ) -> Option<()> {
     let mut isle_ctx = LR35902IsleContext::new(lower_ctx, backend);
-    todo!("constructor_lower_branch")
-    // generated_code::constructor_lower_branch(&mut isle_ctx, branch, targets)
+    todo!("LR35902 CLIF branch lowering")
 }

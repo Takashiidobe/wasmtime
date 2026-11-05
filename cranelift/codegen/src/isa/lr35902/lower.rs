@@ -25,5 +25,4 @@ impl LowerBackend for LR35902Backend {
     fn maybe_pinned_reg(&self) -> Option<Reg> {
         None
     }
-
 }
