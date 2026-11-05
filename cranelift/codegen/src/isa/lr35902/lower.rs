@@ -52,11 +52,15 @@ impl LowerBackend for LR35902Backend {
 
     fn lower_branch(
         &self,
-        _ctx: &mut Lower<Inst>,
-        _ir_inst: IRInst,
-        _targets: &[MachLabel],
+        ctx: &mut Lower<Inst>,
+        ir_inst: IRInst,
+        targets: &[MachLabel],
     ) -> Option<()> {
-        None
+        if ctx.data(ir_inst).opcode() != Opcode::Jump || targets.len() != 1 {
+            return None;
+        }
+        ctx.emit(Inst::jmp_known(targets[0]));
+        Some(())
     }
 
     fn maybe_pinned_reg(&self) -> Option<Reg> {

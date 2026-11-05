@@ -69,6 +69,11 @@ pub(crate) fn emit(
             sink.put1(*amount as u8);
         }
         Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => {}
+        Inst::JumpKnown { dst } => {
+            sink.put1(0xC3);
+            sink.use_label_at_offset(sink.cur_offset(), *dst, super::LabelUse::JumpAbs16);
+            sink.put2(0);
+        }
         Inst::Ret => sink.put1(0xC9),
     }
 }

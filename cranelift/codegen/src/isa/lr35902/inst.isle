@@ -17,5 +17,6 @@
     (DummyUse (reg Reg))
     (Args (args VecArgPair))
     (Rets (rets VecRetPair))
+    (JumpKnown (dst MachLabel))
     (Ret)
 ))

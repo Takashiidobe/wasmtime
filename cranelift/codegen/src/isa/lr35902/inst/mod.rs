@@ -82,8 +82,8 @@ impl Inst {
     }
 
     /// Create an unconditional jump
-    pub(crate) fn jmp_known(_dst: MachLabel) -> Inst {
-        todo!("Implement jmp_known constructor")
+    pub(crate) fn jmp_known(dst: MachLabel) -> Inst {
+        Inst::JumpKnown { dst }
     }
 
     /// Create a conditional trap
@@ -149,6 +149,7 @@ impl PrettyPrint for Inst {
             }
             Inst::AdjustSP { amount } => format!("add sp, {amount}"),
             Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => String::new(),
+            Inst::JumpKnown { dst } => format!("jp {dst:?}"),
             Inst::Ret => "ret".into(),
         }
     }
@@ -251,7 +252,8 @@ impl MachInst for Inst {
 
     fn get_operands(&mut self, collector: &mut impl OperandVisitor) {
         match self {
-            Inst::Nop | Inst::Halt | Inst::Ret | Inst::AdjustSP { .. } => {}
+            Inst::Nop | Inst::Halt | Inst::Ret | Inst::JumpKnown { .. } | Inst::AdjustSP { .. } => {
+            }
             Inst::Move8 { dst, src } => {
                 collector.reg_use(src);
                 collector.reg_def(dst);
@@ -317,6 +319,7 @@ impl MachInst for Inst {
     fn is_term(&self) -> MachTerminator {
         match self {
             Inst::Rets { .. } => MachTerminator::Ret,
+            Inst::JumpKnown { .. } => MachTerminator::Branch,
             _ => MachTerminator::None,
         }
     }
