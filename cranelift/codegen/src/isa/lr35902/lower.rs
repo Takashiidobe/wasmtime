@@ -46,7 +46,7 @@ impl LowerBackend for LR35902Backend {
                 ctx.emit(inst);
                 Some(smallvec![ValueRegs::one(dst.to_reg())])
             }
-            _ => None,
+            _ => isle::lower(ctx, self, ir_inst),
         }
     }
 

@@ -72,6 +72,7 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
         }
 
         let mut next_reg = 0;
+        let mut next_stack = 0;
         let reg_order = register_order(args_or_rets);
         for param in params {
             if matches!(param.purpose, ir::ArgumentPurpose::StructArgument(_)) {
@@ -83,48 +84,55 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
             let (classes, part_types) = Inst::rc_for_type(&param.value_type)?;
             let mut slots = ABIArgSlotVec::new();
             for (class, ty) in classes.iter().zip(part_types) {
-                if *class != RegClass::Int || next_reg == regs::Gpr8::ALL.len() {
+                if *class != RegClass::Int {
                     return Err(crate::CodegenError::Unsupported(
-                        "LR35902 register-only ABI supports up to seven byte parts".into(),
+                        "LR35902 ABI only supports integer register classes".into(),
                     ));
                 }
-                let reg = Reg::from_real_reg(regs::preg(reg_order[next_reg]))
-                    .to_real_reg()
-                    .unwrap();
-                slots.push(ABIArgSlot::Reg {
-                    reg,
-                    ty: *ty,
-                    extension: param.extension,
-                });
-                next_reg += 1;
+                if next_reg < reg_order.len() {
+                    let reg = Reg::from_real_reg(regs::preg(reg_order[next_reg]))
+                        .to_real_reg()
+                        .unwrap();
+                    slots.push(ABIArgSlot::Reg {
+                        reg,
+                        ty: *ty,
+                        extension: param.extension,
+                    });
+                    next_reg += 1;
+                } else if args_or_rets == ArgsOrRets::Args {
+                    slots.push(ABIArgSlot::Stack {
+                        offset: i64::from(next_stack),
+                        ty: *ty,
+                        extension: param.extension,
+                    });
+                    next_stack += ty.bytes();
+                } else {
+                    return Err(crate::CodegenError::Unsupported(
+                        "LR35902 stack return values are not supported".into(),
+                    ));
+                }
             }
             args.push(ABIArg::Slots {
                 slots,
                 purpose: param.purpose,
             });
         }
-        Ok((0, None))
+        Ok((next_stack, None))
     }
 
     fn gen_load_stack(mem: StackAMode, into_reg: Writable<Reg>, ty: ir::Type) -> Self::I {
         assert_eq!(ty, ir::types::I8);
-        match mem {
-            StackAMode::Slot(offset) => Inst::load_stack(
-                i8::try_from(offset).expect("LR35902 stack slot offset exceeds signed byte range"),
-                into_reg,
-            ),
-            _ => panic!("LR35902 only supports frame-relative stack loads"),
+        Inst::LoadStack8 {
+            dst: into_reg,
+            mode: mem,
         }
     }
 
     fn gen_store_stack(mem: StackAMode, from_reg: Reg, ty: ir::Type) -> Self::I {
         assert_eq!(ty, ir::types::I8);
-        match mem {
-            StackAMode::Slot(offset) => Inst::store_stack(
-                i8::try_from(offset).expect("LR35902 stack slot offset exceeds signed byte range"),
-                from_reg,
-            ),
-            _ => panic!("LR35902 only supports frame-relative stack stores"),
+        Inst::StoreStack8 {
+            src: from_reg,
+            mode: mem,
         }
     }
 

@@ -614,7 +614,7 @@ impl Module for JITModule {
         };
 
         let pointer_reloc = match self.isa.triple().pointer_width().unwrap() {
-            PointerWidth::U16 => panic!(),
+            PointerWidth::U16 => Reloc::Abs2,
             PointerWidth::U32 => Reloc::Abs4,
             PointerWidth::U64 => Reloc::Abs8,
         };

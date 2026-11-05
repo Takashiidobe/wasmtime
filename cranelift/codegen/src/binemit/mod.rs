@@ -20,6 +20,8 @@ pub type Addend = i64;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub enum Reloc {
+    /// absolute 2-byte
+    Abs2,
     /// absolute 4-byte
     Abs4,
     /// absolute 8-byte
@@ -155,6 +157,7 @@ impl Reloc {
     /// together. Bytes before the offset are not counted.
     pub fn patched_len(self) -> u32 {
         match self {
+            Self::Abs2 => 2,
             Self::Abs4
             | Self::X86PCRel4
             | Self::X86CallPCRel4
@@ -198,6 +201,7 @@ impl fmt::Display for Reloc {
     /// already unambiguous, e.g. clif syntax with isa specified. In other contexts, use Debug.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            Self::Abs2 => write!(f, "Abs2"),
             Self::Abs4 => write!(f, "Abs4"),
             Self::Abs8 => write!(f, "Abs8"),
             Self::S390xPCRel32Dbl => write!(f, "PCRel32Dbl"),

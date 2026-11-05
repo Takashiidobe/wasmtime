@@ -221,7 +221,10 @@ mod lowering_tests {
     use crate::cursor::Cursor;
     use crate::dominator_tree::DominatorTree;
     use crate::flowgraph::ControlFlowGraph;
-    use crate::ir::{Function, InstBuilder, Signature, UserFuncName, types};
+    use crate::ir::{
+        AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, UserExternalName,
+        UserFuncName, types,
+    };
     use crate::isa::CallConv;
     use crate::machinst::CompiledCodeStencil;
     use crate::settings;
@@ -295,6 +298,95 @@ mod lowering_tests {
             .unwrap();
 
         assert_eq!(result.0.buffer.data(), &[0xC3, 0x03, 0x00, 0xC9]);
+    }
+
+    #[test]
+    fn compiles_direct_call_with_stack_argument() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 4), Signature::new(CallConv::Fast));
+        let callee_sig = Signature {
+            params: vec![AbiParam::new(types::I8); 8],
+            returns: vec![],
+            call_conv: CallConv::Fast,
+        };
+        let signature = func.dfg.signatures.push(callee_sig);
+        let user_name = func.declare_imported_user_function(UserExternalName::new(0, 1));
+        let callee = func.import_function(ExtFuncData {
+            name: ExternalName::user(user_name),
+            signature,
+            colocated: true,
+            patchable: false,
+        });
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let args = (1..=8)
+            .map(|value| cursor.ins().iconst(types::I8, value))
+            .collect::<Vec<_>>();
+        cursor.ins().call(callee, &args);
+        cursor.ins().return_(&[]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+        let code = result.0.buffer.data();
+
+        assert!(code.contains(&0xCD));
+        assert!(code.windows(3).any(|bytes| bytes == [0xF8, 0x00, 0x77]));
+    }
+
+    #[test]
+    fn loads_incoming_stack_argument_after_return_address() {
+        let mut signature = Signature::new(CallConv::Fast);
+        signature.params = vec![AbiParam::new(types::I8); 8];
+        signature.returns.push(AbiParam::new(types::I8));
+        let mut func = Function::with_name_signature(UserFuncName::user(0, 5), signature);
+        let block = func.dfg.make_block();
+        let params = (0..8)
+            .map(|_| func.dfg.append_block_param(block, types::I8))
+            .collect::<Vec<_>>();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        cursor.ins().return_(&[params[7]]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+
+        assert!(
+            result
+                .0
+                .buffer
+                .data()
+                .windows(3)
+                .any(|bytes| bytes == [0xF8, 0x02, 0x7E])
+        );
     }
 
     #[test]

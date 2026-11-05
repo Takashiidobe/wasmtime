@@ -542,7 +542,7 @@ impl Module for ObjectModule {
         } = data;
 
         let pointer_reloc = match self.isa.triple().pointer_width().unwrap() {
-            PointerWidth::U16 => unimplemented!("16bit pointers"),
+            PointerWidth::U16 => Reloc::Abs2,
             PointerWidth::U32 => Reloc::Abs4,
             PointerWidth::U64 => Reloc::Abs8,
         };
@@ -873,6 +873,11 @@ impl ObjectModule {
 
     fn process_reloc(&self, record: &ModuleReloc) -> ObjectRelocRecord {
         let flags = match record.kind {
+            Reloc::Abs2 => RelocationFlags::Generic {
+                kind: RelocationKind::Absolute,
+                encoding: RelocationEncoding::Generic,
+                size: 16,
+            },
             Reloc::Abs4 => RelocationFlags::Generic {
                 kind: RelocationKind::Absolute,
                 encoding: RelocationEncoding::Generic,

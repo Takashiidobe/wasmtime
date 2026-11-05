@@ -68,17 +68,9 @@ impl Inst {
         Inst::LoadImm8 { dst, imm: imm_val }
     }
 
-    pub(crate) fn load_stack(offset: i8, dst: Writable<Reg>) -> Inst {
-        Inst::LoadStack8 { dst, offset }
-    }
-
-    pub(crate) fn store_stack(offset: i8, src: Reg) -> Inst {
-        Inst::StoreStack8 { src, offset }
-    }
-
     /// Create a call to a known function
-    pub(crate) fn call_known(_target: ExternalName) -> Inst {
-        todo!("Implement call_known constructor")
+    pub(crate) fn call_known(info: Box<CallInfo<ExternalName>>) -> Inst {
+        Inst::CallKnown { info }
     }
 
     /// Create an unconditional jump
@@ -128,9 +120,9 @@ impl PrettyPrint for Inst {
             Inst::LoadImm8 { dst, imm } => {
                 format!("ld {}, ${imm:02X}", asm_reg(dst.to_reg()))
             }
-            Inst::LoadStack8 { dst, offset } => {
+            Inst::LoadStack8 { dst, mode } => {
                 let mut lines = vec![
-                    format!("ld hl, {}", asm_sp_offset(*offset)),
+                    format!("ld hl, {}", asm_sp_offset(stack_mode_offset(*mode, None))),
                     "ld a, [hl]".into(),
                 ];
                 if regs::hw_enc(dst.to_reg()) != a {
@@ -138,17 +130,21 @@ impl PrettyPrint for Inst {
                 }
                 lines.join("\n")
             }
-            Inst::StoreStack8 { src, offset } => {
+            Inst::StoreStack8 { src, mode } => {
                 let mut lines = Vec::new();
                 if regs::hw_enc(*src) != a {
                     lines.push(format!("ld a, {}", asm_reg(*src)));
                 }
-                lines.push(format!("ld hl, {}", asm_sp_offset(*offset)));
+                lines.push(format!(
+                    "ld hl, {}",
+                    asm_sp_offset(stack_mode_offset(*mode, None))
+                ));
                 lines.push("ld [hl], a".into());
                 lines.join("\n")
             }
             Inst::AdjustSP { amount } => format!("add sp, {amount}"),
             Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => String::new(),
+            Inst::CallKnown { info } => format!("call {:?}", info.dest),
             Inst::JumpKnown { dst } => format!("jp {}", dst.to_string()),
             Inst::Ret => "ret".into(),
         }
@@ -181,7 +177,7 @@ fn asm_accumulator_op(op: &str, dst: Reg, lhs: Reg, rhs: Reg) -> String {
     lines.join("\n")
 }
 
-fn asm_sp_offset(offset: i8) -> String {
+fn asm_sp_offset(offset: i32) -> String {
     if offset < 0 {
         format!("sp - {}", offset.unsigned_abs())
     } else {
@@ -189,9 +185,25 @@ fn asm_sp_offset(offset: i8) -> String {
     }
 }
 
+fn stack_mode_offset(mode: StackAMode, frame: Option<&FrameLayout>) -> i32 {
+    match mode {
+        StackAMode::Slot(offset) | StackAMode::OutgoingArg(offset) => offset as i32,
+        StackAMode::IncomingArg(offset, _) => {
+            let frame_size = frame.map_or(0, |frame| {
+                frame.fixed_frame_storage_size
+                    + frame.outgoing_args_size
+                    + frame.clobber_size
+                    + frame.setup_area_size
+            });
+            i32::try_from(offset).unwrap() + frame_size as i32 + 2
+        }
+    }
+}
+
 #[cfg(test)]
 mod pretty_print_tests {
     use super::{Inst, PrettyPrint, Reg, Writable, regs};
+    use crate::machinst::abi::StackAMode;
 
     fn writable(reg: Reg) -> Writable<Reg> {
         Writable::from_reg(reg)
@@ -228,7 +240,7 @@ mod pretty_print_tests {
         assert_eq!(
             Inst::LoadStack8 {
                 dst: writable(regs::c()),
-                offset: -2,
+                mode: StackAMode::Slot(-2),
             }
             .pretty_print(0),
             "ld hl, sp - 2\nld a, [hl]\nld c, a"
@@ -236,7 +248,7 @@ mod pretty_print_tests {
         assert_eq!(
             Inst::StoreStack8 {
                 src: regs::c(),
-                offset: 3,
+                mode: StackAMode::Slot(3),
             }
             .pretty_print(0),
             "ld a, c\nld hl, sp + 3\nld [hl], a"
@@ -253,6 +265,24 @@ impl MachInst for Inst {
     fn get_operands(&mut self, collector: &mut impl OperandVisitor) {
         match self {
             Inst::Nop | Inst::Halt | Inst::Ret | Inst::JumpKnown { .. } | Inst::AdjustSP { .. } => {
+            }
+            Inst::CallKnown { info } => {
+                let CallInfo {
+                    uses,
+                    defs,
+                    clobbers,
+                    ..
+                } = &mut **info;
+                for CallArgPair { vreg, preg } in uses {
+                    collector.reg_fixed_use(vreg, *preg);
+                }
+                for CallRetPair { vreg, location } in defs {
+                    match location {
+                        RetLocation::Reg(preg, _) => collector.reg_fixed_def(vreg, *preg),
+                        RetLocation::Stack(_, _) => collector.any_def(vreg),
+                    }
+                }
+                collector.reg_clobbers(*clobbers);
             }
             Inst::Move8 { dst, src } => {
                 collector.reg_use(src);
@@ -415,7 +445,10 @@ impl MachInst for Inst {
     }
 
     fn call_type(&self) -> CallType {
-        CallType::None
+        match self {
+            Inst::CallKnown { .. } => CallType::Regular,
+            _ => CallType::None,
+        }
     }
 
     fn gen_nop_units() -> Vec<Vec<u8>> {
@@ -427,8 +460,7 @@ impl MachInst for Inst {
     }
 
     fn is_safepoint(&self) -> bool {
-        // TODO: Detect call instructions
-        false
+        matches!(self, Inst::CallKnown { .. })
     }
 
     fn function_alignment() -> FunctionAlignment {
@@ -474,8 +506,25 @@ impl MachInstEmit for Inst {
         emit::emit(self, sink, info, state)
     }
 
-    fn pretty_print_inst(&self, _: &mut Self::State) -> String {
-        PrettyPrint::pretty_print(self, 0)
+    fn pretty_print_inst(&self, state: &mut Self::State) -> String {
+        let inst = match self {
+            Inst::LoadStack8 { dst, mode } => Inst::LoadStack8 {
+                dst: *dst,
+                mode: StackAMode::Slot(i64::from(stack_mode_offset(
+                    *mode,
+                    Some(&state.frame_layout),
+                ))),
+            },
+            Inst::StoreStack8 { src, mode } => Inst::StoreStack8 {
+                src: *src,
+                mode: StackAMode::Slot(i64::from(stack_mode_offset(
+                    *mode,
+                    Some(&state.frame_layout),
+                ))),
+            },
+            _ => self.clone(),
+        };
+        PrettyPrint::pretty_print(&inst, 0)
     }
 }
 

@@ -46,8 +46,11 @@ pub(crate) fn emit(
         Inst::LoadImm8 { dst, imm } => {
             emit_ld_r_imm8(sink, super::regs::hw_enc(dst.to_reg()), *imm)
         }
-        Inst::LoadStack8 { dst, offset } => {
-            emit_stack_address(sink, *offset);
+        Inst::LoadStack8 { dst, mode } => {
+            emit_stack_address(
+                sink,
+                super::stack_mode_offset(*mode, Some(&state.frame_layout)),
+            );
             sink.put1(0x7E);
             if super::regs::hw_enc(dst.to_reg()) != super::regs::Gpr8::A as u8 {
                 emit_ld_r_r(
@@ -57,11 +60,14 @@ pub(crate) fn emit(
                 );
             }
         }
-        Inst::StoreStack8 { src, offset } => {
+        Inst::StoreStack8 { src, mode } => {
             if super::regs::hw_enc(*src) != super::regs::Gpr8::A as u8 {
                 emit_ld_r_r(sink, super::regs::Gpr8::A as u8, super::regs::hw_enc(*src));
             }
-            emit_stack_address(sink, *offset);
+            emit_stack_address(
+                sink,
+                super::stack_mode_offset(*mode, Some(&state.frame_layout)),
+            );
             sink.put1(0x77);
         }
         Inst::AdjustSP { amount } => {
@@ -69,6 +75,13 @@ pub(crate) fn emit(
             sink.put1(*amount as u8);
         }
         Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => {}
+        Inst::CallKnown { info } => {
+            sink.put1(0xCD);
+            let reloc_offset = sink.cur_offset();
+            sink.put2(0);
+            sink.add_reloc_at_offset(reloc_offset, crate::binemit::Reloc::Abs2, &info.dest, 0);
+            sink.add_call_site();
+        }
         Inst::JumpKnown { dst } => {
             sink.put1(0xC3);
             sink.use_label_at_offset(sink.cur_offset(), *dst, super::LabelUse::JumpAbs16);
@@ -95,9 +108,20 @@ fn emit_accumulator_op(
     }
 }
 
-fn emit_stack_address(sink: &mut MachBuffer<Inst>, offset: i8) {
+fn emit_stack_address(sink: &mut MachBuffer<Inst>, offset: i32) {
+    let mut remaining = offset;
+    let base = remaining.clamp(i8::MIN as i32, i8::MAX as i32);
     sink.put1(0xF8);
-    sink.put1(offset as u8);
+    sink.put1(base as u8);
+    remaining -= base;
+    while remaining > 0 {
+        sink.put1(0x23);
+        remaining -= 1;
+    }
+    while remaining < 0 {
+        sink.put1(0x2B);
+        remaining += 1;
+    }
 }
 
 /// Emit a NOP instruction (0x00)

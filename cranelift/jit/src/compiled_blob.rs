@@ -165,6 +165,10 @@ impl CompiledBlob {
             );
             let at = unsafe { self.ptr.offset(isize::try_from(offset).unwrap()) };
             match kind {
+                Reloc::Abs2 => {
+                    let what = u16::try_from(relocation_target_addr(name, addend)).unwrap();
+                    unsafe { write_unaligned(at as *mut u16, what) };
+                }
                 Reloc::Abs4 => {
                     let what = relocation_target_addr(name, addend);
                     unsafe { write_unaligned(at as *mut u32, u32::try_from(what).unwrap()) };

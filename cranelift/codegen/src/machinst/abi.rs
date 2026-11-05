@@ -384,6 +384,7 @@ pub trait ABIMachineSpec {
     /// Returns word-size integer type.
     fn word_type() -> Type {
         match Self::word_bits() {
+            16 => I16,
             32 => I32,
             64 => I64,
             _ => unreachable!(),
