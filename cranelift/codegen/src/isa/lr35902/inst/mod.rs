@@ -97,8 +97,149 @@ impl Inst {
 
 impl PrettyPrint for Inst {
     fn pretty_print(&self, _size: u8) -> String {
-        // TODO: Implement pretty printing for each instruction variant
-        format!("lr35902_inst_{:?}", self)
+        let a = regs::Gpr8::A as u8;
+        match self {
+            Inst::Nop => "nop".into(),
+            Inst::Halt => "halt".into(),
+            Inst::Move8 { dst, src } => format!("ld {}, {}", asm_reg(dst.to_reg()), asm_reg(*src)),
+            Inst::Add8 { dst, lhs, rhs } => {
+                let lhs_enc = regs::hw_enc(*lhs);
+                let rhs_enc = regs::hw_enc(*rhs);
+                let dst_reg = dst.to_reg();
+                let dst_name = asm_reg(dst_reg);
+                let mut lines = Vec::new();
+                if lhs_enc == a {
+                    lines.push(format!("add a, {}", asm_reg(*rhs)));
+                } else if rhs_enc == a {
+                    lines.push(format!("add a, {}", asm_reg(*lhs)));
+                } else {
+                    lines.push(format!("ld a, {}", asm_reg(*lhs)));
+                    lines.push(format!("add a, {}", asm_reg(*rhs)));
+                }
+                if regs::hw_enc(dst_reg) != a {
+                    lines.push(format!("ld {dst_name}, a"));
+                }
+                lines.join("\n")
+            }
+            Inst::Sub8 { dst, lhs, rhs } => asm_accumulator_op("sub", dst.to_reg(), *lhs, *rhs),
+            Inst::And8 { dst, lhs, rhs } => asm_accumulator_op("and", dst.to_reg(), *lhs, *rhs),
+            Inst::Or8 { dst, lhs, rhs } => asm_accumulator_op("or", dst.to_reg(), *lhs, *rhs),
+            Inst::Xor8 { dst, lhs, rhs } => asm_accumulator_op("xor", dst.to_reg(), *lhs, *rhs),
+            Inst::LoadImm8 { dst, imm } => {
+                format!("ld {}, ${imm:02X}", asm_reg(dst.to_reg()))
+            }
+            Inst::LoadStack8 { dst, offset } => {
+                let mut lines = vec![
+                    format!("ld hl, {}", asm_sp_offset(*offset)),
+                    "ld a, [hl]".into(),
+                ];
+                if regs::hw_enc(dst.to_reg()) != a {
+                    lines.push(format!("ld {}, a", asm_reg(dst.to_reg())));
+                }
+                lines.join("\n")
+            }
+            Inst::StoreStack8 { src, offset } => {
+                let mut lines = Vec::new();
+                if regs::hw_enc(*src) != a {
+                    lines.push(format!("ld a, {}", asm_reg(*src)));
+                }
+                lines.push(format!("ld hl, {}", asm_sp_offset(*offset)));
+                lines.push("ld [hl], a".into());
+                lines.join("\n")
+            }
+            Inst::AdjustSP { amount } => format!("add sp, {amount}"),
+            Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => String::new(),
+            Inst::Ret => "ret".into(),
+        }
+    }
+}
+
+fn asm_reg(reg: Reg) -> String {
+    match reg.to_real_reg().map(|reg| reg.hw_enc()) {
+        Some(0) => "b".into(),
+        Some(1) => "c".into(),
+        Some(2) => "d".into(),
+        Some(3) => "e".into(),
+        Some(4) => "h".into(),
+        Some(5) => "l".into(),
+        Some(7) => "a".into(),
+        _ => format!("{reg:?}"),
+    }
+}
+
+fn asm_accumulator_op(op: &str, dst: Reg, lhs: Reg, rhs: Reg) -> String {
+    let a = regs::Gpr8::A as u8;
+    let mut lines = Vec::new();
+    if regs::hw_enc(lhs) != a {
+        lines.push(format!("ld a, {}", asm_reg(lhs)));
+    }
+    lines.push(format!("{op} {}", asm_reg(rhs)));
+    if regs::hw_enc(dst) != a {
+        lines.push(format!("ld {}, a", asm_reg(dst)));
+    }
+    lines.join("\n")
+}
+
+fn asm_sp_offset(offset: i8) -> String {
+    if offset < 0 {
+        format!("sp - {}", offset.unsigned_abs())
+    } else {
+        format!("sp + {offset}")
+    }
+}
+
+#[cfg(test)]
+mod pretty_print_tests {
+    use super::{Inst, PrettyPrint, Reg, Writable, regs};
+
+    fn writable(reg: Reg) -> Writable<Reg> {
+        Writable::from_reg(reg)
+    }
+
+    #[test]
+    fn prints_lr35902_instructions_as_rgbds() {
+        assert_eq!(
+            Inst::LoadImm8 {
+                dst: writable(regs::b()),
+                imm: 0x2A,
+            }
+            .pretty_print(0),
+            "ld b, $2A"
+        );
+        assert_eq!(
+            Inst::Add8 {
+                dst: writable(regs::a()),
+                lhs: regs::b(),
+                rhs: regs::c(),
+            }
+            .pretty_print(0),
+            "ld a, b\nadd a, c"
+        );
+        assert_eq!(
+            Inst::Sub8 {
+                dst: writable(regs::d()),
+                lhs: regs::b(),
+                rhs: regs::c(),
+            }
+            .pretty_print(0),
+            "ld a, b\nsub c\nld d, a"
+        );
+        assert_eq!(
+            Inst::LoadStack8 {
+                dst: writable(regs::c()),
+                offset: -2,
+            }
+            .pretty_print(0),
+            "ld hl, sp - 2\nld a, [hl]\nld c, a"
+        );
+        assert_eq!(
+            Inst::StoreStack8 {
+                src: regs::c(),
+                offset: 3,
+            }
+            .pretty_print(0),
+            "ld a, c\nld hl, sp + 3\nld [hl], a"
+        );
     }
 }
 
