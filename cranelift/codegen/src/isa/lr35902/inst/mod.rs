@@ -121,10 +121,8 @@ impl PrettyPrint for Inst {
                 format!("ld {}, ${imm:02X}", asm_reg(dst.to_reg()))
             }
             Inst::LoadStack8 { dst, mode } => {
-                let mut lines = vec![
-                    format!("ld hl, {}", asm_sp_offset(stack_mode_offset(*mode, None))),
-                    "ld a, [hl]".into(),
-                ];
+                let mut lines = asm_stack_address(stack_mode_offset(*mode, None));
+                lines.push("ld a, [hl]".into());
                 if regs::hw_enc(dst.to_reg()) != a {
                     lines.push(format!("ld {}, a", asm_reg(dst.to_reg())));
                 }
@@ -135,10 +133,7 @@ impl PrettyPrint for Inst {
                 if regs::hw_enc(*src) != a {
                     lines.push(format!("ld a, {}", asm_reg(*src)));
                 }
-                lines.push(format!(
-                    "ld hl, {}",
-                    asm_sp_offset(stack_mode_offset(*mode, None))
-                ));
+                lines.extend(asm_stack_address(stack_mode_offset(*mode, None)));
                 lines.push("ld [hl], a".into());
                 lines.join("\n")
             }
@@ -183,6 +178,23 @@ fn asm_sp_offset(offset: i32) -> String {
     } else {
         format!("sp + {offset}")
     }
+}
+
+fn asm_stack_address(offset: i32) -> Vec<String> {
+    let base = offset.clamp(i8::MIN as i32, i8::MAX as i32);
+    let mut lines = vec![format!("ld hl, {}", asm_sp_offset(base))];
+    if offset > base {
+        lines.extend(core::iter::repeat_n(
+            "inc hl".into(),
+            (offset - base) as usize,
+        ));
+    } else if offset < base {
+        lines.extend(core::iter::repeat_n(
+            "dec hl".into(),
+            (base - offset) as usize,
+        ));
+    }
+    lines
 }
 
 fn stack_mode_offset(mode: StackAMode, frame: Option<&FrameLayout>) -> i32 {
@@ -255,6 +267,19 @@ mod pretty_print_tests {
             }
             .pretty_print(0),
             "ld a, c\nld hl, sp + 3\nld [hl], a"
+        );
+    }
+
+    #[test]
+    fn expands_stack_offsets_outside_signed_byte_range() {
+        let inst = Inst::LoadStack8 {
+            dst: writable(regs::a()),
+            mode: StackAMode::Slot(130),
+        };
+
+        assert!(
+            inst.pretty_print(0)
+                .starts_with("ld hl, sp + 127\ninc hl\ninc hl\n")
         );
     }
 }
