@@ -164,7 +164,7 @@ impl TargetIsa for LR35902Backend {
         _result: &CompiledCode,
         _kind: crate::isa::unwind::UnwindInfoKind,
     ) -> CodegenResult<Option<crate::isa::unwind::UnwindInfo>> {
-        unimplemented!("LR35902 does not support unwinding");
+        Ok(None)
     }
 
     #[cfg(feature = "unwind")]
