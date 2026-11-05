@@ -264,6 +264,46 @@ mod lowering_tests {
 
         assert_eq!(result.0.buffer.data().last(), Some(&0xC9));
     }
+
+    #[test]
+    fn compiles_i8_sub_and_bitwise_ops_to_lr35902_machine_code() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 2), Signature::new(CallConv::Fast));
+        func.signature
+            .returns
+            .push(crate::ir::AbiParam::new(types::I8));
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let lhs = cursor.ins().iconst(types::I8, 0x5A);
+        let rhs = cursor.ins().iconst(types::I8, 0x0F);
+        let sub = cursor.ins().isub(lhs, rhs);
+        let and = cursor.ins().band(sub, rhs);
+        let or = cursor.ins().bor(and, lhs);
+        let xor = cursor.ins().bxor(or, rhs);
+        cursor.ins().return_(&[xor]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let mut regalloc_ctx = regalloc2::Ctx::default();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc_ctx,
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.0.buffer.data().last(), Some(&0xC9));
+    }
+
     #[test]
     fn compiles_i8_add_with_spills() {
         let mut func =

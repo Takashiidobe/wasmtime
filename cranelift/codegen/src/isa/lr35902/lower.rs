@@ -29,11 +29,21 @@ impl LowerBackend for LR35902Backend {
                 ctx.gen_return(&rets);
                 Some(smallvec![])
             }
-            Opcode::Iadd if ctx.output_ty(ir_inst, 0) == types::I8 => {
+            Opcode::Iadd | Opcode::Isub | Opcode::Band | Opcode::Bor | Opcode::Bxor
+                if ctx.output_ty(ir_inst, 0) == types::I8 =>
+            {
                 let lhs = ctx.put_input_in_regs(ir_inst, 0).only_reg()?;
                 let rhs = ctx.put_input_in_regs(ir_inst, 1).only_reg()?;
                 let dst = ctx.alloc_tmp(types::I8).only_reg()?;
-                ctx.emit(Inst::Add8 { dst, lhs, rhs });
+                let inst = match ctx.data(ir_inst).opcode() {
+                    Opcode::Iadd => Inst::Add8 { dst, lhs, rhs },
+                    Opcode::Isub => Inst::Sub8 { dst, lhs, rhs },
+                    Opcode::Band => Inst::And8 { dst, lhs, rhs },
+                    Opcode::Bor => Inst::Or8 { dst, lhs, rhs },
+                    Opcode::Bxor => Inst::Xor8 { dst, lhs, rhs },
+                    _ => unreachable!(),
+                };
+                ctx.emit(inst);
                 Some(smallvec![ValueRegs::one(dst.to_reg())])
             }
             _ => None,

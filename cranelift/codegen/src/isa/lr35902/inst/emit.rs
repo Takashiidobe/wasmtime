@@ -39,6 +39,10 @@ pub(crate) fn emit(
                 emit_ld_r_r(sink, super::regs::hw_enc(dst.to_reg()), a);
             }
         }
+        Inst::Sub8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0x90, dst, lhs, rhs),
+        Inst::And8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xA0, dst, lhs, rhs),
+        Inst::Xor8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xA8, dst, lhs, rhs),
+        Inst::Or8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xB0, dst, lhs, rhs),
         Inst::LoadImm8 { dst, imm } => {
             emit_ld_r_imm8(sink, super::regs::hw_enc(dst.to_reg()), *imm)
         }
@@ -66,6 +70,23 @@ pub(crate) fn emit(
         }
         Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => {}
         Inst::Ret => sink.put1(0xC9),
+    }
+}
+
+fn emit_accumulator_op(
+    sink: &mut MachBuffer<Inst>,
+    opcode: u8,
+    dst: &crate::machinst::Writable<crate::machinst::Reg>,
+    lhs: &crate::machinst::Reg,
+    rhs: &crate::machinst::Reg,
+) {
+    let a = super::regs::Gpr8::A as u8;
+    if super::regs::hw_enc(*lhs) != a {
+        emit_ld_r_r(sink, a, super::regs::hw_enc(*lhs));
+    }
+    sink.put1(opcode | super::regs::hw_enc(*rhs));
+    if super::regs::hw_enc(dst.to_reg()) != a {
+        emit_ld_r_r(sink, super::regs::hw_enc(dst.to_reg()), a);
     }
 }
 

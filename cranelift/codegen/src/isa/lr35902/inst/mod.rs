@@ -121,6 +121,15 @@ impl MachInst for Inst {
                 collector.reg_def(dst);
                 collector.reg_clobbers(regs::preg_set(regs::Gpr8::A));
             }
+            Inst::Sub8 { dst, lhs, rhs }
+            | Inst::And8 { dst, lhs, rhs }
+            | Inst::Or8 { dst, lhs, rhs }
+            | Inst::Xor8 { dst, lhs, rhs } => {
+                collector.reg_use(lhs);
+                collector.reg_fixed_use(rhs, regs::b());
+                collector.reg_def(dst);
+                collector.reg_clobbers(regs::preg_set(regs::Gpr8::A));
+            }
             Inst::LoadImm8 { dst, .. } => collector.reg_def(dst),
             Inst::LoadStack8 { dst, .. } => {
                 collector.reg_def(dst);
