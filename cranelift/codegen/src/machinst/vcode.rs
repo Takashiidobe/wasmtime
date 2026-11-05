@@ -1759,7 +1759,7 @@ impl<I: VCodeInst> VRegAllocator<I> {
             // for a `Value`.
             _ => {
                 return Err(CodegenError::Unsupported(format!(
-                    "value type {ty} requires {} registers; this backend supports at most 2",
+                    "value type {ty} requires {} registers; this backend supports at most 4",
                     regclasses.len()
                 )));
             }

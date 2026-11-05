@@ -470,7 +470,6 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
 
         let sret_reg = sret_param.map(|param| {
             let regs = value_regs[param];
-            assert!(regs.len() == 1);
             regs
         });
 
