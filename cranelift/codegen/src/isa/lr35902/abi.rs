@@ -53,8 +53,7 @@ impl ABIMachineSpec for LR35902ABIMachineSpec {
     }
 
     fn stack_align(_call_conv: isa::CallConv) -> u32 {
-        // LR35902 has no specific stack alignment requirements
-        1
+        2
     }
 
     fn compute_arg_locs(
@@ -369,6 +368,7 @@ mod tests {
 
     #[test]
     fn byte_abi_assigns_arguments_and_returns_in_documented_register_order() {
+        assert_eq!(LR35902ABIMachineSpec::stack_align(isa::CallConv::Fast), 2);
         assert_eq!(
             register_order(ArgsOrRets::Args),
             [
