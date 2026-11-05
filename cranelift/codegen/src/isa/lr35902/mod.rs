@@ -223,8 +223,8 @@ mod lowering_tests {
     use crate::flowgraph::ControlFlowGraph;
     use crate::ir::condcodes::IntCC;
     use crate::ir::{
-        AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, UserExternalName,
-        UserFuncName, types,
+        AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, StackSlotData,
+        StackSlotKind, UserExternalName, UserFuncName, types,
     };
     use crate::isa::CallConv;
     use crate::machinst::CompiledCodeStencil;
@@ -465,6 +465,47 @@ mod lowering_tests {
         assert!(code.iter().any(|byte| (0x88..=0x8F).contains(byte)));
         assert!(code.iter().any(|byte| (0x98..=0x9F).contains(byte)));
         assert_eq!(code.last(), Some(&0xC9));
+    }
+
+    #[test]
+    fn compiles_i16_stack_address_to_lr35902_machine_code() {
+        let mut func =
+            Function::with_name_signature(UserFuncName::user(0, 8), Signature::new(CallConv::Fast));
+        func.signature.returns.push(AbiParam::new(types::I16));
+        let slot =
+            func.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 2, 1));
+        let block = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let address = cursor.ins().stack_addr(types::I16, slot, 0);
+        cursor.ins().return_(&[address]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+
+        assert!(
+            result
+                .0
+                .buffer
+                .data()
+                .windows(2)
+                .any(|bytes| bytes[0] == 0xF8)
+        );
+        assert_eq!(result.0.buffer.data().last(), Some(&0xC9));
     }
 
     #[test]

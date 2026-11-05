@@ -241,6 +241,9 @@ impl PrettyPrint for Inst {
                 lines.push("ld [hl], a".into());
                 lines.join("\n")
             }
+            Inst::StackAddr16 { mode, .. } => {
+                asm_stack_address(stack_mode_offset(*mode, None)).join("\n")
+            }
             Inst::AdjustSP { amount } => format!("add sp, {amount}"),
             Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => String::new(),
             Inst::CallKnown { info } => format!("call {:?}", info.dest),
@@ -783,6 +786,12 @@ impl MachInst for Inst {
                 collector.reg_use(src);
                 collector.reg_clobbers(regs::stack_access_clobbers());
             }
+            Inst::StackAddr16 {
+                dst_low, dst_high, ..
+            } => {
+                collector.reg_fixed_def(dst_low, regs::l());
+                collector.reg_fixed_def(dst_high, regs::h());
+            }
             Inst::DummyUse { reg } => collector.reg_use(reg),
             Inst::Args { args } => {
                 for ArgPair { vreg, preg } in args {
@@ -834,6 +843,7 @@ impl MachInst for Inst {
             self,
             Inst::LoadStack8 { .. }
                 | Inst::StoreStack8 { .. }
+                | Inst::StackAddr16 { .. }
                 | Inst::LoadMem8 { .. }
                 | Inst::LoadMem16 { .. }
                 | Inst::StoreMem8 { .. }
@@ -996,6 +1006,18 @@ impl MachInstEmit for Inst {
             },
             Inst::StoreStack8 { src, mode } => Inst::StoreStack8 {
                 src: *src,
+                mode: StackAMode::Slot(i64::from(stack_mode_offset(
+                    *mode,
+                    Some(&state.frame_layout),
+                ))),
+            },
+            Inst::StackAddr16 {
+                dst_low,
+                dst_high,
+                mode,
+            } => Inst::StackAddr16 {
+                dst_low: *dst_low,
+                dst_high: *dst_high,
                 mode: StackAMode::Slot(i64::from(stack_mode_offset(
                     *mode,
                     Some(&state.frame_layout),

@@ -21,6 +21,7 @@
     (StoreMem16 (address_low Reg) (address_high Reg) (offset i32) (scratch_h WritableReg) (scratch_l WritableReg) (accumulator WritableReg) (src_low Reg) (src_high Reg))
     (LoadStack8 (dst WritableReg) (mode StackAMode))
     (StoreStack8 (src Reg) (mode StackAMode))
+    (StackAddr16 (dst_low WritableReg) (dst_high WritableReg) (mode StackAMode))
     (AdjustSP (amount i8))
     (DummyUse (reg Reg))
     (Args (args VecArgPair))

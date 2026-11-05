@@ -212,6 +212,10 @@ pub(crate) fn emit(
             );
             sink.put1(0x77);
         }
+        Inst::StackAddr16 { mode, .. } => emit_stack_address(
+            sink,
+            super::stack_mode_offset(*mode, Some(&state.frame_layout)),
+        ),
         Inst::AdjustSP { amount } => {
             sink.put1(0xE8);
             sink.put1(*amount as u8);

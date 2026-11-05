@@ -3,7 +3,7 @@ use crate::isa::lr35902::LR35902Backend;
 use crate::isa::lr35902::inst::*;
 use crate::machinst::Reg;
 use crate::machinst::lower::*;
-use crate::machinst::{Lower, MachLabel, ValueRegs};
+use crate::machinst::{Lower, MachLabel, StackAMode, ValueRegs};
 use alloc::vec::Vec;
 use smallvec::smallvec;
 
@@ -14,6 +14,26 @@ impl LowerBackend for LR35902Backend {
 
     fn lower(&self, ctx: &mut Lower<Inst>, ir_inst: IRInst) -> Option<InstOutput> {
         match ctx.data(ir_inst).opcode() {
+            Opcode::StackAddr if ctx.output_ty(ir_inst, 0) == types::I16 => {
+                let stack_slot = ctx.data(ir_inst).stack_slot()?;
+                let offset = ctx.data(ir_inst).load_store_offset()?;
+                let offset = ctx
+                    .abi()
+                    .sized_stackslot_area_offset(stack_slot, i64::from(offset))?;
+                let dst = ctx.alloc_tmp(types::I16);
+                let [dst_low, dst_high] = dst.regs() else {
+                    return None;
+                };
+                ctx.emit(Inst::StackAddr16 {
+                    dst_low: *dst_low,
+                    dst_high: *dst_high,
+                    mode: StackAMode::Slot(i64::from(offset)),
+                });
+                Some(smallvec![ValueRegs::two(
+                    dst_low.to_reg(),
+                    dst_high.to_reg()
+                )])
+            }
             Opcode::Iconst if ctx.output_ty(ir_inst, 0) == types::I8 => {
                 let imm = ctx.get_constant(ir_inst)? as u8;
                 let dst = ctx.alloc_tmp(types::I8).only_reg()?;
