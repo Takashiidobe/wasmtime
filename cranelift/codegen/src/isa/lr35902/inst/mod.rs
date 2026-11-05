@@ -843,7 +843,6 @@ impl MachInst for Inst {
             self,
             Inst::LoadStack8 { .. }
                 | Inst::StoreStack8 { .. }
-                | Inst::StackAddr16 { .. }
                 | Inst::LoadMem8 { .. }
                 | Inst::LoadMem16 { .. }
                 | Inst::StoreMem8 { .. }
