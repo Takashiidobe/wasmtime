@@ -187,7 +187,10 @@ fn asm_sp_offset(offset: i32) -> String {
 
 fn stack_mode_offset(mode: StackAMode, frame: Option<&FrameLayout>) -> i32 {
     match mode {
-        StackAMode::Slot(offset) | StackAMode::OutgoingArg(offset) => offset as i32,
+        StackAMode::Slot(offset) => {
+            offset as i32 + frame.map_or(0, |frame| frame.outgoing_args_size as i32)
+        }
+        StackAMode::OutgoingArg(offset) => offset as i32,
         StackAMode::IncomingArg(offset, _) => {
             let frame_size = frame.map_or(0, |frame| {
                 frame.fixed_frame_storage_size
