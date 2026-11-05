@@ -1,12 +1,13 @@
-//! This module defines Z80-specific machine instruction types.
+//! This module defines LR35902-specific machine instruction types.
 
 use crate::binemit::{Addend, CodeOffset, Reloc};
 use crate::ir::{ExternalName, TrapCode, Type, types};
-use crate::isa::z80::settings as z80_settings;
+use crate::isa::lr35902::settings as lr35902_settings;
 use crate::isa::FunctionAlignment;
 use crate::{CodegenError, CodegenResult, settings};
 use crate::machinst::*;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::slice;
 use smallvec::{SmallVec, smallvec};
 use std::fmt::{self, Write};
@@ -38,7 +39,7 @@ impl Inst {
     /// Check if the instruction can be emitted given the current target
     /// architecture.
     fn is_available(&self, _emit_info: &EmitInfo) -> bool {
-        // For now, all instructions are available on Z80
+        // For now, all instructions are available on LR35902
         true
     }
 }
@@ -49,7 +50,7 @@ impl Inst {
 impl Inst {
     /// Create a NOP instruction
     pub(crate) fn nop() -> Self {
-        todo!("Implement NOP instruction constructor")
+        Self::Nop
     }
 
     /// Create a load instruction
@@ -97,7 +98,7 @@ impl Inst {
 impl PrettyPrint for Inst {
     fn pretty_print(&self, _size: u8) -> String {
         // TODO: Implement pretty printing for each instruction variant
-        format!("z80_inst_{:?}", self)
+        format!("lr35902_inst_{:?}", self)
     }
 }
 
@@ -105,7 +106,7 @@ impl PrettyPrint for Inst {
 // Instructions: MachInst trait implementation
 
 impl MachInst for Inst {
-    type ABIMachineSpec = Z80ABIMachineSpec;
+    type ABIMachineSpec = LR35902ABIMachineSpec;
 
     fn get_operands(&mut self, _collector: &mut impl OperandVisitor) {
         // TODO: Implement operand collection for register allocation
@@ -148,7 +149,7 @@ impl MachInst for Inst {
 
     fn gen_move(dst_reg: Writable<Reg>, src_reg: Reg, _ty: Type) -> Inst {
         // TODO: Generate register-to-register move
-        // For Z80, this would typically be LD dst, src
+        // For LR35902, this would typically be LD dst, src
         let _ = (dst_reg, src_reg);
         todo!("Implement gen_move")
     }
@@ -157,8 +158,8 @@ impl MachInst for Inst {
         Inst::nop()
     }
 
-    fn rc_for_type(ty: Type) -> CodegenResult<(&'static [RegClass], &'static [Type])> {
-        match ty {
+    fn rc_for_type(ty: &Type) -> CodegenResult<(&'static [RegClass], &'static [Type])> {
+        match *ty {
             types::I8 => Ok((&[RegClass::Int], &[types::I8])),
             types::I16 => Ok((&[RegClass::Int, RegClass::Int], &[types::I8, types::I8])),
             types::I32 => Ok((
@@ -175,9 +176,9 @@ impl MachInst for Inst {
                     types::I8, types::I8, types::I8, types::I8,
                 ]
             )),
-            // Z80 doesn't have native floating-point support
+            // LR35902 doesn't have native floating-point support
             _ => Err(CodegenError::Unsupported(format!(
-                "Unsupported type for Z80: {ty}"
+                "Unsupported type for LR35902: {ty}"
             ))),
         }
     }
@@ -185,7 +186,7 @@ impl MachInst for Inst {
     fn canonical_type_for_rc(rc: RegClass) -> Type {
         match rc {
             RegClass::Int => types::I8,
-            _ => panic!("Unexpected register class for Z80: {:?}", rc),
+            _ => panic!("Unexpected register class for LR35902: {:?}", rc),
         }
     }
 
@@ -194,7 +195,7 @@ impl MachInst for Inst {
     }
 
     fn gen_imm_u64(value: u64, dst: Writable<Reg>) -> Option<Self> {
-        // Z80 can only load 8-bit immediates directly
+        // LR35902 can only load 8-bit immediates directly
         if value <= 0xFF {
             Some(Inst::imm(value as u8, dst))
         } else {
@@ -203,8 +204,8 @@ impl MachInst for Inst {
     }
 
     fn gen_imm_f64(_value: f64, _tmp: Writable<Reg>, _dst: Writable<Reg>) -> SmallVec<[Self; 2]> {
-        // Z80 doesn't support floating-point
-        panic!("Z80 does not support floating-point operations")
+        // LR35902 doesn't support floating-point
+        panic!("LR35902 does not support floating-point operations")
     }
 
     fn gen_dummy_use(_reg: Reg) -> Self {
@@ -212,12 +213,20 @@ impl MachInst for Inst {
     }
 
     fn worst_case_size() -> CodeOffset {
-        // Z80 instructions are at most 4 bytes (with displacement and immediate)
+        // LR35902 instructions are at most 4 bytes (with displacement and immediate)
         4
     }
 
-    fn ref_type_regclass(_: &settings::Flags) -> RegClass {
-        RegClass::Int
+    fn call_type(&self) -> CallType {
+        CallType::None
+    }
+
+    fn gen_nop_units() -> Vec<Vec<u8>> {
+        vec![vec![0x00]]
+    }
+
+    fn worst_case_island_growth() -> CodeOffset {
+        0
     }
 
     fn is_safepoint(&self) -> bool {
@@ -235,7 +244,7 @@ impl MachInst for Inst {
     type LabelUse = LabelUse;
 
     const TRAP_OPCODE: &'static [u8] = &[
-        // TODO: Define the trap opcode for Z80
+        // TODO: Define the trap opcode for LR35902
         // For now, we use HALT (0x76)
         0x76
     ];
@@ -247,12 +256,12 @@ impl MachInst for Inst {
 /// Constant state used during emissions of a sequence of instructions.
 pub struct EmitInfo {
     pub(super) flags: settings::Flags,
-    pub(super) isa_flags: z80_settings::Flags,
+    pub(super) isa_flags: lr35902_settings::Flags,
 }
 
 impl EmitInfo {
     /// Create a constant state for emission of instructions.
-    pub fn new(flags: settings::Flags, isa_flags: z80_settings::Flags) -> Self {
+    pub fn new(flags: settings::Flags, isa_flags: lr35902_settings::Flags) -> Self {
         Self { flags, isa_flags }
     }
 }
@@ -264,9 +273,8 @@ impl MachInstEmit for Inst {
     type State = EmitState;
     type Info = EmitInfo;
 
-    fn emit(&self, _sink: &mut MachBuffer<Inst>, _info: &Self::Info, _state: &mut Self::State) {
-        // TODO: Implement instruction emission
-        todo!("Implement emit")
+    fn emit(&self, sink: &mut MachBuffer<Inst>, info: &Self::Info, state: &mut Self::State) {
+        emit::emit(self, sink, info, state)
     }
 
     fn pretty_print_inst(&self, _: &mut Self::State) -> String {
@@ -331,7 +339,7 @@ impl MachInstLabelUse for LabelUse {
     }
 
     fn supports_veneer(self) -> bool {
-        // Z80 doesn't need veneers for any label use
+        // LR35902 doesn't need veneers for any label use
         false
     }
 
@@ -344,7 +352,7 @@ impl MachInstLabelUse for LabelUse {
     }
 
     fn generate_veneer(self, _: &mut [u8], _: CodeOffset) -> (CodeOffset, LabelUse) {
-        panic!("Z80 does not support veneers")
+        panic!("LR35902 does not support veneers")
     }
 
     fn from_reloc(_reloc: Reloc, _addend: Addend) -> Option<Self> {
@@ -353,13 +361,13 @@ impl MachInstLabelUse for LabelUse {
     }
 }
 
-// Z80 ABI Machine Spec is defined in ../abi.rs
-pub use crate::isa::z80::abi::Z80ABIMachineSpec;
+// LR35902 ABI Machine Spec is defined in ../abi.rs
+pub use crate::isa::lr35902::abi::LR35902ABIMachineSpec;
 
 //=============================================================================
 // Addressing mode type
 
-/// Addressing mode for Z80 memory operations
+/// Addressing mode for LR35902 memory operations
 #[derive(Clone, Debug)]
 pub enum Amode {
     /// Register indirect: (HL), (BC), (DE)

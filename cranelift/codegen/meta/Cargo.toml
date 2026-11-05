@@ -27,5 +27,4 @@ pulley = ['dep:pulley-interpreter']
 # inputs. Only the ISLE verifier tooling needs these; normal codegen
 # builds leave them out.
 spec = []
-z80 = []
-z80 = []
+lr35902 = []

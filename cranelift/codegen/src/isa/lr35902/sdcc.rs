@@ -5,7 +5,7 @@ use serde_derive::{Deserialize, Serialize};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub enum SdccCallConv {
-    /// Z80 SDCC calling convention, version 1
+    /// LR35902 SDCC calling convention, version 1
     /// `__sdcccall(1)` in SDCC
     ///
     /// # Parameters (ADEHL registers are used)
@@ -33,7 +33,7 @@ pub enum SdccCallConv {
     /// After the call, the stack parameters are cleaned up by the caller, with the following
     /// exceptions: functions that do not have variable arguments and return void or a type of at most 16 bits, or have both a first
     /// parameter of type float and a return value of type float.
-    Z80V1,
+    LR35902V1,
 
     /// SM83 SDCC calling convention, version 0
     /// `__sdcccall(0)` in SDCC
@@ -85,8 +85,8 @@ pub enum SdccCallConv {
     // Not yet implemented calling conventions
     // SmallC,
     // DynamicC,
-    // Z80V0,
-    // Z80V0Callee,
+    // LR35902V0,
+    // LR35902V0Callee,
     // RabbitV0,
     // RabbitV1,
 }

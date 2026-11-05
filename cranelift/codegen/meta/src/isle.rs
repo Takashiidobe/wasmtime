@@ -152,8 +152,8 @@ pub fn get_isle_compilations(
         .join("src")
         .join("isa")
         .join("pulley_shared");
-    #[cfg(feature = "z80")]
-    let src_isa_z80 = codegen_crate_dir.join("src").join("isa").join("z80");
+    #[cfg(feature = "lr35902")]
+    let src_isa_lr35902 = codegen_crate_dir.join("src").join("isa").join("lr35902");
 
     // This is a set of ISLE compilation units.
     //
@@ -287,15 +287,15 @@ pub fn get_isle_compilations(
                     clif_lower_isle.clone(),
                 ],
             },
-            #[cfg(feature = "z80")]
+            #[cfg(feature = "lr35902")]
             IsleCompilation {
-                name: "z80".to_string(),
-                output: gen_dir.join("isle_z80.rs"),
-                inputs: vec![
+                name: "lr35902".to_string(),
+                output: gen_dir.join("isle_lr35902.rs"),
+                tracked_inputs: vec![
                     prelude_isle.clone(),
                     prelude_lower_isle.clone(),
-                    src_isa_z80.join("inst.isle"),
-                    src_isa_z80.join("lower.isle"),
+                    src_isa_lr35902.join("inst.isle"),
+                    src_isa_lr35902.join("lower.isle"),
                 ],
                 untracked_inputs: vec![numerics_isle.clone(), clif_lower_isle.clone()],
             },

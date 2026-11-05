@@ -1,4 +1,4 @@
-;; z80 instruction selection and CLIF-to-MachInst lowering.
+;; lr35902 instruction selection and CLIF-to-MachInst lowering.
 
 ;; The main lowering constructor term: takes a clif `Inst` and returns the
 ;; register(s) within which the lowered instruction's result values live.

@@ -1,4 +1,4 @@
-//! Emission state for Z80 instructions.
+//! Emission state for LR35902 instructions.
 
 use super::*;
 use crate::ir;
@@ -20,7 +20,7 @@ pub struct EmitState {
 }
 
 impl MachInstEmitState<Inst> for EmitState {
-    fn new(abi: &Callee<Z80ABIMachineSpec>, ctrl_plane: ControlPlane) -> Self {
+    fn new(abi: &Callee<LR35902ABIMachineSpec>, ctrl_plane: ControlPlane) -> Self {
         EmitState {
             user_stack_map: None,
             ctrl_plane,

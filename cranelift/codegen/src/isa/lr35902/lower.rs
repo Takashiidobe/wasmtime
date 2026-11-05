@@ -1,12 +1,12 @@
 use crate::ir::Inst as IRInst;
-use crate::isa::z80::Z80Backend;
-use crate::isa::z80::inst::*;
+use crate::isa::lr35902::LR35902Backend;
+use crate::isa::lr35902::inst::*;
 use crate::machinst::lower::*;
 use crate::machinst::*;
 
 pub mod isle;
 
-impl LowerBackend for Z80Backend {
+impl LowerBackend for LR35902Backend {
     type MInst = Inst;
 
     fn lower(&self, ctx: &mut Lower<Inst>, ir_inst: IRInst) -> Option<InstOutput> {
@@ -26,5 +26,4 @@ impl LowerBackend for Z80Backend {
         None
     }
 
-    type FactFlowState = ();
 }

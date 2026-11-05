@@ -1,9 +1,9 @@
-//! Z80 ABI implementation.
+//! LR35902 ABI implementation.
 
 use crate::ir;
 use crate::ir::Signature;
-use crate::isa::z80::inst::Inst;
-use crate::isa::z80::settings as z80_settings;
+use crate::isa::lr35902::inst::Inst;
+use crate::isa::lr35902::settings as lr35902_settings;
 use crate::isa;
 use crate::machinst::*;
 use crate::settings;
@@ -12,24 +12,24 @@ use alloc::vec::Vec;
 use regalloc2::{MachineEnv, PRegSet};
 use smallvec::SmallVec;
 
-/// Z80-specific ABI behavior
-pub struct Z80ABIMachineSpec;
+/// LR35902-specific ABI behavior
+pub struct LR35902ABIMachineSpec;
 
-impl IsaFlags for z80_settings::Flags {}
+impl IsaFlags for lr35902_settings::Flags {}
 
-impl ABIMachineSpec for Z80ABIMachineSpec {
+impl ABIMachineSpec for LR35902ABIMachineSpec {
     type I = Inst;
-    type F = z80_settings::Flags;
+    type F = lr35902_settings::Flags;
 
     const STACK_ARG_RET_SIZE_LIMIT: u32 = 64 * 1024;
 
     fn word_bits() -> u32 {
-        // Z80 is an 8-bit architecture
-        8
+        // The LR35902 has a 16-bit address space.
+        16
     }
 
     fn stack_align(_call_conv: isa::CallConv) -> u32 {
-        // Z80 has no specific stack alignment requirements
+        // LR35902 has no specific stack alignment requirements
         1
     }
 
@@ -41,15 +41,15 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _add_ret_area_ptr: bool,
         _args: ArgsAccumulator,
     ) -> CodegenResult<(u32, Option<usize>)> {
-        todo!("Z80 compute_arg_locs")
+        todo!("LR35902 compute_arg_locs")
     }
 
     fn gen_load_stack(_mem: StackAMode, _into_reg: Writable<Reg>, _ty: ir::Type) -> Self::I {
-        todo!("Z80 gen_load_stack")
+        todo!("LR35902 gen_load_stack")
     }
 
     fn gen_store_stack(_mem: StackAMode, _from_reg: Reg, _ty: ir::Type) -> Self::I {
-        todo!("Z80 gen_store_stack")
+        todo!("LR35902 gen_store_stack")
     }
 
     fn gen_move(to_reg: Writable<Reg>, from_reg: Reg, ty: ir::Type) -> Self::I {
@@ -63,15 +63,15 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _from_bits: u8,
         _to_bits: u8,
     ) -> Self::I {
-        todo!("Z80 gen_extend")
+        todo!("LR35902 gen_extend")
     }
 
     fn gen_args(_args: Vec<ArgPair>) -> Self::I {
-        todo!("Z80 gen_args")
+        todo!("LR35902 gen_args")
     }
 
     fn gen_rets(_rets: Vec<RetPair>) -> Self::I {
-        todo!("Z80 gen_rets")
+        todo!("LR35902 gen_rets")
     }
 
     fn gen_add_imm(
@@ -80,31 +80,31 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _from_reg: Reg,
         _imm: u32,
     ) -> SmallInstVec<Self::I> {
-        todo!("Z80 gen_add_imm")
+        todo!("LR35902 gen_add_imm")
     }
 
     fn gen_stack_lower_bound_trap(_limit_reg: Reg) -> SmallInstVec<Self::I> {
-        todo!("Z80 gen_stack_lower_bound_trap")
+        todo!("LR35902 gen_stack_lower_bound_trap")
     }
 
     fn gen_get_stack_addr(_mem: StackAMode, _into_reg: Writable<Reg>) -> Self::I {
-        todo!("Z80 gen_get_stack_addr")
+        todo!("LR35902 gen_get_stack_addr")
     }
 
     fn get_stacklimit_reg(_call_conv: isa::CallConv) -> Reg {
-        todo!("Z80 get_stacklimit_reg")
+        todo!("LR35902 get_stacklimit_reg")
     }
 
     fn gen_load_base_offset(_into_reg: Writable<Reg>, _base: Reg, _offset: i32, _ty: ir::Type) -> Self::I {
-        todo!("Z80 gen_load_base_offset")
+        todo!("LR35902 gen_load_base_offset")
     }
 
     fn gen_store_base_offset(_base: Reg, _offset: i32, _from_reg: Reg, _ty: ir::Type) -> Self::I {
-        todo!("Z80 gen_store_base_offset")
+        todo!("LR35902 gen_store_base_offset")
     }
 
     fn gen_sp_reg_adjust(_amount: i32) -> SmallInstVec<Self::I> {
-        todo!("Z80 gen_sp_reg_adjust")
+        todo!("LR35902 gen_sp_reg_adjust")
     }
 
     fn compute_frame_layout(
@@ -112,7 +112,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _flags: &settings::Flags,
         _sig: &Signature,
         _regs: &[Writable<RealReg>],
-        _is_leaf: bool,
+        function_calls: FunctionCalls,
         _incoming_args_size: u32,
         _tail_args_size: u32,
         _stackslots_size: u32,
@@ -120,9 +120,9 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _outgoing_args_size: u32,
     ) -> FrameLayout {
         // TODO: Implement proper frame layout computation
-        todo!("Z80 compute_frame_layout");
         FrameLayout {
             word_bytes: Self::word_bytes(),
+            function_calls,
             incoming_args_size: 0,
             tail_args_size: 0,
             setup_area_size: 0,
@@ -140,7 +140,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _isa_flags: &Self::F,
         _frame_layout: &FrameLayout,
     ) -> SmallInstVec<Self::I> {
-        todo!("Z80 gen_prologue_frame_setup")
+        todo!("LR35902 gen_prologue_frame_setup")
     }
 
     fn gen_epilogue_frame_restore(
@@ -149,7 +149,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _isa_flags: &Self::F,
         _frame_layout: &FrameLayout,
     ) -> SmallInstVec<Self::I> {
-        todo!("Z80 gen_epilogue_frame_restore")
+        todo!("LR35902 gen_epilogue_frame_restore")
     }
 
     fn gen_return(
@@ -157,11 +157,11 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _isa_flags: &Self::F,
         _frame_layout: &FrameLayout,
     ) -> SmallInstVec<Self::I> {
-        todo!("Z80 gen_return")
+        todo!("LR35902 gen_return")
     }
 
     fn gen_probestack(_insts: &mut SmallInstVec<Self::I>, _frame_size: u32) {
-        todo!("Z80 gen_probestack")
+        todo!("LR35902 gen_probestack")
     }
 
     fn gen_inline_probestack(
@@ -170,7 +170,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _frame_size: u32,
         _guard_size: u32,
     ) {
-        todo!("Z80 gen_inline_probestack")
+        todo!("LR35902 gen_inline_probestack")
     }
 
     fn gen_clobber_save(
@@ -178,7 +178,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _flags: &settings::Flags,
         _frame_layout: &FrameLayout,
     ) -> SmallVec<[Self::I; 16]> {
-        todo!("Z80 gen_clobber_save")
+        todo!("LR35902 gen_clobber_save")
     }
 
     fn gen_clobber_restore(
@@ -186,7 +186,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _flags: &settings::Flags,
         _frame_layout: &FrameLayout,
     ) -> SmallVec<[Self::I; 16]> {
-        todo!("Z80 gen_clobber_restore")
+        todo!("LR35902 gen_clobber_restore")
     }
 
     fn gen_memcpy<F: FnMut(ir::Type) -> Writable<Reg>>(
@@ -196,7 +196,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _size: usize,
         _alloc_tmp: F,
     ) -> SmallVec<[Self::I; 8]> {
-        todo!("Z80 gen_memcpy")
+        todo!("LR35902 gen_memcpy")
     }
 
     fn get_number_of_spillslots_for_value(
@@ -204,7 +204,7 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         _target_vector_bytes: u32,
         _isa_flags: &Self::F,
     ) -> u32 {
-        todo!("Z80 get_number_of_spillslots_for_value")
+        todo!("LR35902 get_number_of_spillslots_for_value")
     }
 
     fn get_machine_env(_flags: &settings::Flags, _call_conv: isa::CallConv) -> &MachineEnv {
@@ -214,14 +214,14 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
         MACHINE_ENV.get_or_init(|| {
             MachineEnv {
                 preferred_regs_by_class: [
-                    vec![], // TODO: Int registers
-                    vec![], // Float registers - Z80 has none
-                    vec![], // Vector registers - Z80 has none
+                    PRegSet::empty(),
+                    PRegSet::empty(),
+                    PRegSet::empty(),
                 ],
                 non_preferred_regs_by_class: [
-                    vec![], // Int
-                    vec![], // Float
-                    vec![], // Vector
+                    PRegSet::empty(),
+                    PRegSet::empty(),
+                    PRegSet::empty(),
                 ],
                 scratch_by_class: [None, None, None],
                 fixed_stack_slots: vec![],
@@ -239,11 +239,12 @@ impl ABIMachineSpec for Z80ABIMachineSpec {
     fn get_ext_mode(
         _call_conv: isa::CallConv,
         _specified: ir::ArgumentExtension,
+        _location: ABIArgLocation,
     ) -> ir::ArgumentExtension {
         ir::ArgumentExtension::None
     }
 
     fn retval_temp_reg(_call_conv_of_callee: isa::CallConv) -> Writable<Reg> {
-        todo!("Z80 retval_temp_reg")
+        todo!("LR35902 retval_temp_reg")
     }
 }

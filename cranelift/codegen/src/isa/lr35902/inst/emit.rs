@@ -1,6 +1,6 @@
-//! Emission of Z80 machine code.
+//! Emission of LR35902 machine code.
 
-use crate::machinst::{MachBuffer, MachInstEmit};
+use crate::machinst::{MachBuffer, VCodeConstants};
 
 use super::{EmitInfo, EmitState, Inst};
 
@@ -104,25 +104,42 @@ fn emit_ld_r_r(sink: &mut MachBuffer<Inst>, dst_hw_enc: u8, src_hw_enc: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_byte_emission() {
-        // Test helper functions for byte emission
-        // Actual tests will be added once instruction set is defined
-    }
+    use cranelift_control::ControlPlane;
 
     #[test]
     fn test_ld_a_imm() {
         // Test: LD A, 42 should encode as 0x3E 0x2A
         // A = 7 (0b111), so opcode = 00_111_110 = 0x3E
         use crate::machinst::MachBuffer;
-        use crate::settings;
-
         let mut sink = MachBuffer::<Inst>::new();
         emit_ld_r_imm8(&mut sink, 7, 0x2A);  // A=7, imm=42
 
-        let code = sink.finish(None, &settings::Flags::new(settings::builder()));
-        assert_eq!(code.buffer, &[0x3E, 0x2A]);
+        let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
+        assert_eq!(code.data(), &[0x3E, 0x2A]);
+    }
+
+    #[test]
+    fn test_instruction_dispatch_emits_nop() {
+        use crate::isa::lr35902::settings as lr35902_settings;
+        use crate::machinst::MachInstEmit;
+        use crate::settings;
+
+        let flags = settings::Flags::new(settings::builder());
+        let isa_flags = lr35902_settings::Flags::new(&flags, &lr35902_settings::builder());
+        let info = EmitInfo::new(flags, isa_flags);
+        let mut state = EmitState::default();
+        let mut sink = MachBuffer::<Inst>::new();
+        MachInstEmit::emit(&Inst::Nop, &mut sink, &info, &mut state);
+        let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
+        assert_eq!(code.data(), &[0x00]);
+    }
+
+    #[test]
+    fn test_halt() {
+        let mut sink = MachBuffer::<Inst>::new();
+        emit_halt(&mut sink);
+        let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
+        assert_eq!(code.data(), &[0x76]);
     }
 
     #[test]
@@ -131,12 +148,10 @@ mod tests {
         // dst=A=7 (0b111), src=B=0 (0b000)
         // opcode = 01_111_000 = 0x78
         use crate::machinst::MachBuffer;
-        use crate::settings;
-
         let mut sink = MachBuffer::<Inst>::new();
         emit_ld_r_r(&mut sink, 7, 0);  // dst=A=7, src=B=0
 
-        let code = sink.finish(None, &settings::Flags::new(settings::builder()));
-        assert_eq!(code.buffer, &[0x78]);
+        let code = sink.finish(&VCodeConstants::default(), &mut ControlPlane::default());
+        assert_eq!(code.data(), &[0x78]);
     }
 }

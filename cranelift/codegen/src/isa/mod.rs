@@ -76,8 +76,8 @@ pub mod riscv64;
 #[cfg(feature = "s390x")]
 mod s390x;
 
-#[cfg(feature = "z80")]
-mod z80;
+#[cfg(feature = "lr35902")]
+mod lr35902;
 
 #[cfg(feature = "pulley")]
 mod pulley32;
@@ -122,9 +122,9 @@ pub fn lookup(triple: Triple) -> Result<Builder, LookupError> {
         Architecture::Pulley64 | Architecture::Pulley64be => {
             isa_builder!(pulley64, (feature = "pulley"), triple)
         }
-        #[cfg(feature = "z80")]
+        #[cfg(feature = "lr35902")]
         Architecture::Z80(_) => {
-            isa_builder!(z80, (feature = "z80"), triple)
+            isa_builder!(lr35902, (feature = "lr35902"), triple)
         }
         _ => Err(LookupError::Unsupported),
     }
@@ -512,5 +512,20 @@ impl Debug for &dyn TargetIsa {
             self.triple(),
             self.pointer_width()
         )
+    }
+}
+
+#[cfg(all(test, feature = "lr35902"))]
+mod lr35902_tests {
+    use super::lookup;
+    use core::str::FromStr;
+    use target_lexicon::Triple;
+
+    #[test]
+    fn lookup_z80_triple_selects_lr35902_backend() {
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let builder = lookup(triple).unwrap();
+        let flags = crate::settings::Flags::new(crate::settings::builder());
+        assert_eq!(builder.finish(flags).unwrap().name(), "lr35902");
     }
 }

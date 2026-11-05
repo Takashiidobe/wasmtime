@@ -10,7 +10,7 @@ use target_lexicon::Triple;
 
 use crate::ir;
 use crate::isa::Builder as IsaBuilder;
-use crate::isa::z80::settings as z80_settings;
+use crate::isa::lr35902::settings as lr35902_settings;
 use crate::machinst::CompiledCode;
 use crate::settings::{self as shared_settings, Flags};
 use crate::{
@@ -25,32 +25,35 @@ pub(crate) mod sdcc;
 mod lower;
 mod inst;
 
-pub(crate) struct Z80Backend {
+pub(crate) struct LR35902Backend {
     triple: Triple,
     flags: Flags,
-    z80_flags: z80_settings::Flags,
+    lr35902_flags: lr35902_settings::Flags,
 }
 
-impl Z80Backend {
-    /// Create a new Z80 backend with the given (shared) flags.
-    fn new_with_flags(triple: Triple, flags: Flags, z80_flags: z80_settings::Flags) -> Self {
+impl LR35902Backend {
+    /// Create a new LR35902 backend with the given (shared) flags.
+    fn new_with_flags(triple: Triple, flags: Flags, lr35902_flags: lr35902_settings::Flags) -> Self {
         Self {
             triple,
             flags,
-            z80_flags,
+            lr35902_flags,
         }
     }
 }
 
-impl TargetIsa for Z80Backend {
+impl TargetIsa for LR35902Backend {
     fn compile_function(
         &self,
         _func: &Function,
         _domtree: &DominatorTree,
+        _regalloc_ctx: &mut regalloc2::Ctx,
         _want_disasm: bool,
         _ctrl_plane: &mut ControlPlane,
     ) -> CodegenResult<CompiledCodeStencil> {
-        todo!()
+        Err(crate::CodegenError::Unsupported(
+            "LR35902 function lowering is not implemented".into(),
+        ))
     }
 
     fn flags(&self) -> &Flags {
@@ -58,19 +61,19 @@ impl TargetIsa for Z80Backend {
     }
 
     fn isa_flags(&self) -> Vec<shared_settings::Value> {
-        self.z80_flags.iter().collect()
+        self.lr35902_flags.iter().collect()
     }
 
     fn isa_flags_hash_key(&self) -> IsaFlagsHashKey<'_> {
-        IsaFlagsHashKey(self.z80_flags.hash_key())
+        IsaFlagsHashKey(self.lr35902_flags.hash_key())
     }
 
     fn dynamic_vector_bytes(&self, _dyn_ty: crate::ir::Type) -> u32 {
-        todo!()
+        0
     }
 
     fn name(&self) -> &'static str {
-        "z80"
+        "lr35902"
     }
 
     fn triple(&self) -> &Triple {
@@ -79,34 +82,36 @@ impl TargetIsa for Z80Backend {
 
     fn text_section_builder(
         &self,
-        _num_labeled_funcs: usize,
+        num_labeled_funcs: usize,
     ) -> std::prelude::v1::Box<dyn crate::TextSectionBuilder> {
-        todo!()
+        Box::new(crate::machinst::MachTextSectionBuilder::<inst::Inst>::new(
+            num_labeled_funcs,
+        ))
     }
 
     fn function_alignment(&self) -> FunctionAlignment {
-        todo!()
+        <inst::Inst as crate::machinst::MachInst>::function_alignment()
     }
 
     fn page_size_align_log2(&self) -> u8 {
-        todo!()
+        16
     }
 
-    fn pretty_print_reg(&self, _reg: crate::Reg, _size: u8) -> std::string::String {
-        todo!()
+    fn pretty_print_reg(&self, reg: crate::Reg, _size: u8) -> std::string::String {
+        format!("{reg:?}")
     }
 
     fn has_native_fma(&self) -> bool {
-        // FMA? On a Z80? Not likely.
+        // FMA? On a LR35902? Not likely.
         false
     }
 
     fn has_round(&self) -> bool {
-        // Z80 lacks floating-point support, so no rounding either.
+        // LR35902 lacks floating-point support, so no rounding either.
         false
     }
 
-    fn has_x86_blendv_lowering(&self, _ty: crate::ir::Type) -> bool {
+    fn has_blendv_lowering(&self, _ty: crate::ir::Type) -> bool {
         false
     }
 
@@ -132,7 +137,7 @@ impl TargetIsa for Z80Backend {
         _result: &CompiledCode,
         _kind: crate::isa::unwind::UnwindInfoKind,
     ) -> CodegenResult<Option<crate::isa::unwind::UnwindInfo>> {
-        unimplemented!("Z80 does not support unwinding");
+        unimplemented!("LR35902 does not support unwinding");
     }
 
     #[cfg(feature = "unwind")]
@@ -145,7 +150,7 @@ impl TargetIsa for Z80Backend {
         &self,
         _: crate::machinst::Reg,
     ) -> Result<u16, super::unwind::systemv::RegisterMappingError> {
-        unimplemented!("Z80 does not support unwinding");
+        unimplemented!("LR35902 does not support unwinding");
     }
 
     #[cfg(feature = "disas")]
@@ -154,9 +159,9 @@ impl TargetIsa for Z80Backend {
     }
 }
 
-impl fmt::Display for Z80Backend {
+impl fmt::Display for LR35902Backend {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Z80Backend")
+        f.debug_struct("LR35902Backend")
             .field("name", &self.name())
             .field("triple", &self.triple())
             .field("flags", &format!("{}", self.flags()))
@@ -168,7 +173,7 @@ impl fmt::Display for Z80Backend {
 pub(crate) fn isa_builder(triple: Triple) -> IsaBuilder {
     IsaBuilder {
         triple,
-        setup: z80_settings::builder(),
+        setup: lr35902_settings::builder(),
         constructor: isa_constructor,
     }
 }
@@ -178,7 +183,7 @@ fn isa_constructor(
     shared_flags: Flags,
     builder: &shared_settings::Builder,
 ) -> CodegenResult<OwnedTargetIsa> {
-    let isa_flags = z80_settings::Flags::new(&shared_flags, builder);
-    let backend = Z80Backend::new_with_flags(triple, shared_flags, isa_flags);
+    let isa_flags = lr35902_settings::Flags::new(&shared_flags, builder);
+    let backend = LR35902Backend::new_with_flags(triple, shared_flags, isa_flags);
     Ok(backend.wrapped())
 }

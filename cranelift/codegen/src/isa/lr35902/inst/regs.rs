@@ -1,6 +1,6 @@
-//! Register definitions for Z80.
+//! Register definitions for LR35902.
 //!
-//! Z80 has the following registers:
+//! LR35902 has the following registers:
 //! - 8-bit general-purpose registers: A, B, C, D, E, H, L
 //! - 16-bit register pairs: BC, DE, HL, AF
 //! - 16-bit index registers: IX, IY (controlled by has_index_registers flag)
@@ -10,10 +10,10 @@
 use crate::Reg;
 use regalloc2::{VReg, PReg, RegClass};
 
-/// Z80 8-bit General Purpose Registers
+/// LR35902 8-bit General Purpose Registers
 ///
-/// These are the ACTUAL Z80 hardware encodings used in machine code.
-/// In most Z80 instructions, 8-bit registers are encoded as 3 bits:
+/// These are the ACTUAL LR35902 hardware encodings used in machine code.
+/// In most LR35902 instructions, 8-bit registers are encoded as 3 bits:
 ///   - 000 (0) = B
 ///   - 001 (1) = C
 ///   - 010 (2) = D
@@ -76,10 +76,10 @@ pub(crate) fn a() -> Reg {
     gpr(Gpr8::A)
 }
 
-/// Z80 16-bit General Purpose Register Pairs
+/// LR35902 16-bit General Purpose Register Pairs
 ///
-/// These are the ACTUAL Z80 hardware encodings used in machine code.
-/// In most Z80 instructions, 16-bit register pairs are encoded as 2 bits:
+/// These are the ACTUAL LR35902 hardware encodings used in machine code.
+/// In most LR35902 instructions, 16-bit register pairs are encoded as 2 bits:
 ///   00 (0) = BC
 ///   01 (1) = DE
 ///   10 (2) = HL

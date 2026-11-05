@@ -94,9 +94,9 @@ x86 = []
 arm64 = []
 s390x = []
 riscv64 = []
-z80 = [
+lr35902 = [
     "target-lexicon/arch_z80",
-    "cranelift-codegen-meta/z80"
+    "cranelift-codegen-meta/lr35902"
 ]
 pulley = [
     "dep:pulley-interpreter",
@@ -108,7 +108,7 @@ pulley = [
 host-arch = []
 
 # Option to enable all architectures.
-all-arch = ["all-native-arch", "pulley", "z80"]
+all-arch = ["all-native-arch", "pulley", "lr35902"]
 
 # Option to enable all architectures that correspond to an actual native target
 # (that is, exclude Pulley).
