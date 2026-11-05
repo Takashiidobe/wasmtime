@@ -64,11 +64,129 @@ pub(crate) fn emit(
             emit_accumulator_op(sink, 0x90, dst_low, lhs_low, rhs_low);
             emit_accumulator_op(sink, 0x98, dst_high, lhs_high, rhs_high);
         }
+        Inst::Compare8 {
+            accumulator,
+            scratch,
+            dst,
+            lhs,
+            rhs,
+            condition,
+        } => sink.put_data(&super::encode_compare8(
+            super::regs::hw_enc(accumulator.to_reg()),
+            super::regs::hw_enc(scratch.to_reg()),
+            super::regs::hw_enc(dst.to_reg()),
+            super::regs::hw_enc(*lhs),
+            super::regs::hw_enc(*rhs),
+            *condition,
+        )),
+        Inst::Compare16 {
+            accumulator,
+            scratch,
+            dst,
+            lhs_low,
+            lhs_high,
+            rhs_low,
+            rhs_high,
+            condition,
+        } => sink.put_data(&super::encode_compare16(
+            super::regs::hw_enc(accumulator.to_reg()),
+            super::regs::hw_enc(scratch.to_reg()),
+            super::regs::hw_enc(dst.to_reg()),
+            [
+                super::regs::hw_enc(*lhs_low),
+                super::regs::hw_enc(*lhs_high),
+            ],
+            [
+                super::regs::hw_enc(*rhs_low),
+                super::regs::hw_enc(*rhs_high),
+            ],
+            *condition,
+        )),
         Inst::And8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xA0, dst, lhs, rhs),
         Inst::Xor8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xA8, dst, lhs, rhs),
         Inst::Or8 { dst, lhs, rhs } => emit_accumulator_op(sink, 0xB0, dst, lhs, rhs),
         Inst::LoadImm8 { dst, imm } => {
             emit_ld_r_imm8(sink, super::regs::hw_enc(dst.to_reg()), *imm)
+        }
+        Inst::LoadMem8 {
+            address_low: _,
+            address_high: _,
+            offset,
+            scratch_h: _,
+            scratch_l: _,
+            accumulator: _,
+            dst,
+        } => {
+            emit_mem_address(sink, *offset);
+            sink.put1(0x7E);
+            emit_ld_r_r(
+                sink,
+                super::regs::hw_enc(dst.to_reg()),
+                super::regs::Gpr8::A as u8,
+            );
+        }
+        Inst::LoadMem16 {
+            address_low: _,
+            address_high: _,
+            offset,
+            scratch_h: _,
+            scratch_l: _,
+            accumulator: _,
+            dst_low,
+            dst_high,
+        } => {
+            emit_mem_address(sink, *offset);
+            sink.put1(0x7E);
+            emit_ld_r_r(
+                sink,
+                super::regs::hw_enc(dst_low.to_reg()),
+                super::regs::Gpr8::A as u8,
+            );
+            sink.put1(0x23);
+            sink.put1(0x7E);
+            emit_ld_r_r(
+                sink,
+                super::regs::hw_enc(dst_high.to_reg()),
+                super::regs::Gpr8::A as u8,
+            );
+        }
+        Inst::StoreMem8 {
+            address_low: _,
+            address_high: _,
+            offset,
+            scratch_h: _,
+            scratch_l: _,
+            accumulator: _,
+            src,
+        } => {
+            emit_mem_address(sink, *offset);
+            emit_ld_r_r(sink, super::regs::Gpr8::A as u8, super::regs::hw_enc(*src));
+            sink.put1(0x77);
+        }
+        Inst::StoreMem16 {
+            address_low: _,
+            address_high: _,
+            offset,
+            scratch_h: _,
+            scratch_l: _,
+            accumulator: _,
+            src_low,
+            src_high,
+        } => {
+            emit_mem_address(sink, *offset);
+            emit_ld_r_r(
+                sink,
+                super::regs::Gpr8::A as u8,
+                super::regs::hw_enc(*src_low),
+            );
+            sink.put1(0x77);
+            sink.put1(0x23);
+            emit_ld_r_r(
+                sink,
+                super::regs::Gpr8::A as u8,
+                super::regs::hw_enc(*src_high),
+            );
+            sink.put1(0x77);
         }
         Inst::LoadStack8 { dst, mode } => {
             emit_stack_address(
@@ -111,6 +229,24 @@ pub(crate) fn emit(
             sink.use_label_at_offset(sink.cur_offset(), *dst, super::LabelUse::JumpAbs16);
             sink.put2(0);
         }
+        Inst::BranchIf {
+            condition,
+            taken,
+            not_taken,
+        } => {
+            let accumulator = super::regs::Gpr8::A as u8;
+            let condition = super::regs::hw_enc(*condition);
+            if condition != accumulator {
+                emit_ld_r_r(sink, accumulator, condition);
+            }
+            sink.put1(0xB7);
+            sink.put1(0xC2);
+            sink.use_label_at_offset(sink.cur_offset(), *taken, super::LabelUse::JumpAbs16);
+            sink.put2(0);
+            sink.put1(0xC3);
+            sink.use_label_at_offset(sink.cur_offset(), *not_taken, super::LabelUse::JumpAbs16);
+            sink.put2(0);
+        }
         Inst::Ret => sink.put1(0xC9),
     }
 }
@@ -145,6 +281,20 @@ fn emit_stack_address(sink: &mut MachBuffer<Inst>, offset: i32) {
     while remaining < 0 {
         sink.put1(0x2B);
         remaining += 1;
+    }
+}
+
+fn emit_mem_address(sink: &mut MachBuffer<Inst>, offset: i32) {
+    emit_ld_r_r(sink, super::regs::Gpr8::H as u8, super::regs::Gpr8::B as u8);
+    emit_ld_r_r(sink, super::regs::Gpr8::L as u8, super::regs::Gpr8::C as u8);
+    if offset > 0 {
+        for _ in 0..offset {
+            sink.put1(0x23);
+        }
+    } else {
+        for _ in 0..offset.unsigned_abs() {
+            sink.put1(0x2B);
+        }
     }
 }
 

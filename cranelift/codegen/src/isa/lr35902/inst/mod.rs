@@ -1,6 +1,7 @@
 //! This module defines LR35902-specific machine instruction types.
 
 use crate::binemit::{Addend, CodeOffset, Reloc};
+use crate::ir::condcodes::{CondCode, IntCC};
 use crate::ir::{ExternalName, TrapCode, Type, types};
 use crate::isa::FunctionAlignment;
 use crate::isa::lr35902::settings as lr35902_settings;
@@ -140,11 +141,88 @@ impl PrettyPrint for Inst {
                 asm_accumulator_op("sbc", dst_high.to_reg(), *lhs_high, *rhs_high),
             ]
             .join("\n"),
+            Inst::Compare8 {
+                accumulator,
+                scratch,
+                dst,
+                lhs,
+                rhs,
+                condition,
+            } => format_db(&encode_compare8(
+                regs::hw_enc(accumulator.to_reg()),
+                regs::hw_enc(scratch.to_reg()),
+                regs::hw_enc(dst.to_reg()),
+                regs::hw_enc(*lhs),
+                regs::hw_enc(*rhs),
+                *condition,
+            )),
+            Inst::Compare16 {
+                accumulator,
+                scratch,
+                dst,
+                lhs_low,
+                lhs_high,
+                rhs_low,
+                rhs_high,
+                condition,
+            } => format_db(&encode_compare16(
+                regs::hw_enc(accumulator.to_reg()),
+                regs::hw_enc(scratch.to_reg()),
+                regs::hw_enc(dst.to_reg()),
+                [regs::hw_enc(*lhs_low), regs::hw_enc(*lhs_high)],
+                [regs::hw_enc(*rhs_low), regs::hw_enc(*rhs_high)],
+                *condition,
+            )),
             Inst::And8 { dst, lhs, rhs } => asm_accumulator_op("and", dst.to_reg(), *lhs, *rhs),
             Inst::Or8 { dst, lhs, rhs } => asm_accumulator_op("or", dst.to_reg(), *lhs, *rhs),
             Inst::Xor8 { dst, lhs, rhs } => asm_accumulator_op("xor", dst.to_reg(), *lhs, *rhs),
             Inst::LoadImm8 { dst, imm } => {
                 format!("ld {}, ${imm:02X}", asm_reg(dst.to_reg()))
+            }
+            Inst::LoadMem8 { offset, dst, .. } => {
+                let mut lines = asm_mem_address(*offset);
+                lines.extend([
+                    "ld a, [hl]".into(),
+                    format!("ld {}, a", asm_reg(dst.to_reg())),
+                ]);
+                lines.join("\n")
+            }
+            Inst::LoadMem16 {
+                offset,
+                dst_low,
+                dst_high,
+                ..
+            } => {
+                let mut lines = asm_mem_address(*offset);
+                lines.extend([
+                    "ld a, [hl]".into(),
+                    format!("ld {}, a", asm_reg(dst_low.to_reg())),
+                    "inc hl".into(),
+                    "ld a, [hl]".into(),
+                    format!("ld {}, a", asm_reg(dst_high.to_reg())),
+                ]);
+                lines.join("\n")
+            }
+            Inst::StoreMem8 { offset, src, .. } => {
+                let mut lines = asm_mem_address(*offset);
+                lines.extend([format!("ld a, {}", asm_reg(*src)), "ld [hl], a".into()]);
+                lines.join("\n")
+            }
+            Inst::StoreMem16 {
+                offset,
+                src_low,
+                src_high,
+                ..
+            } => {
+                let mut lines = asm_mem_address(*offset);
+                lines.extend([
+                    format!("ld a, {}", asm_reg(*src_low)),
+                    "ld [hl], a".into(),
+                    "inc hl".into(),
+                    format!("ld a, {}", asm_reg(*src_high)),
+                    "ld [hl], a".into(),
+                ]);
+                lines.join("\n")
             }
             Inst::LoadStack8 { dst, mode } => {
                 let mut lines = asm_stack_address(stack_mode_offset(*mode, None));
@@ -167,6 +245,16 @@ impl PrettyPrint for Inst {
             Inst::DummyUse { .. } | Inst::Args { .. } | Inst::Rets { .. } => String::new(),
             Inst::CallKnown { info } => format!("call {:?}", info.dest),
             Inst::JumpKnown { dst } => format!("jp {}", dst.to_string()),
+            Inst::BranchIf {
+                condition,
+                taken,
+                not_taken,
+            } => format!(
+                "ld a, {}\nor a\njp nz, {}\njp {}",
+                asm_reg(*condition),
+                taken.to_string(),
+                not_taken.to_string()
+            ),
             Inst::Ret => "ret".into(),
         }
     }
@@ -225,6 +313,201 @@ fn asm_stack_address(offset: i32) -> Vec<String> {
         ));
     }
     lines
+}
+
+fn asm_mem_address(offset: i32) -> Vec<String> {
+    let mut lines = vec!["ld h, b".into(), "ld l, c".into()];
+    if offset > 0 {
+        lines.extend(core::iter::repeat_n("inc hl".into(), offset as usize));
+    } else if offset < 0 {
+        lines.extend(core::iter::repeat_n(
+            "dec hl".into(),
+            offset.unsigned_abs() as usize,
+        ));
+    }
+    lines
+}
+
+fn format_db(bytes: &[u8]) -> String {
+    bytes
+        .chunks(12)
+        .map(|chunk| {
+            let bytes = chunk
+                .iter()
+                .map(|byte| format!("${byte:02X}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("db {bytes}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+struct CompareCode {
+    bytes: Vec<u8>,
+    labels: Vec<Option<usize>>,
+    branches: Vec<(usize, usize)>,
+}
+
+impl CompareCode {
+    fn new() -> Self {
+        Self {
+            bytes: Vec::new(),
+            labels: Vec::new(),
+            branches: Vec::new(),
+        }
+    }
+
+    fn label(&mut self) -> usize {
+        self.labels.push(None);
+        self.labels.len() - 1
+    }
+
+    fn mark(&mut self, label: usize) {
+        self.labels[label] = Some(self.bytes.len());
+    }
+
+    fn jr(&mut self, opcode: u8, label: usize) {
+        self.bytes.extend([opcode, 0]);
+        self.branches.push((self.bytes.len() - 1, label));
+    }
+
+    fn finish(mut self) -> Vec<u8> {
+        for (offset_index, label) in self.branches {
+            let target = self.labels[label].unwrap();
+            let distance = target as isize - (offset_index + 1) as isize;
+            assert!((-128..=127).contains(&distance));
+            self.bytes[offset_index] = distance as i8 as u8;
+        }
+        self.bytes
+    }
+}
+
+fn emit_compare_setup(code: &mut CompareCode, lhs: u8, rhs: u8) {
+    code.bytes.extend([0x78 | lhs, 0xB8 | rhs]);
+}
+
+fn emit_signed_compare_setup(code: &mut CompareCode, lhs: u8, rhs: u8) {
+    code.bytes
+        .extend([0x78 | lhs, 0xE6, 0x80, 0x47, 0x78 | rhs, 0xE6, 0x80, 0xB8]);
+}
+
+fn emit_condition_dispatch(code: &mut CompareCode, condition: IntCC, yes: usize, no: usize) {
+    use IntCC::*;
+    match condition {
+        Equal => {
+            code.jr(0x28, yes);
+            code.jr(0x18, no);
+        }
+        NotEqual => {
+            code.jr(0x20, yes);
+            code.jr(0x18, no);
+        }
+        UnsignedLessThan => {
+            code.jr(0x38, yes);
+            code.jr(0x18, no);
+        }
+        UnsignedGreaterThanOrEqual => {
+            code.jr(0x30, yes);
+            code.jr(0x18, no);
+        }
+        UnsignedGreaterThan => {
+            code.jr(0x38, no);
+            code.jr(0x28, no);
+            code.jr(0x18, yes);
+        }
+        UnsignedLessThanOrEqual => {
+            code.jr(0x38, yes);
+            code.jr(0x28, yes);
+            code.jr(0x18, no);
+        }
+        SignedLessThan | SignedGreaterThanOrEqual | SignedGreaterThan | SignedLessThanOrEqual => {
+            unreachable!()
+        }
+    }
+}
+
+fn emit_bool_result(code: &mut CompareCode, dst: u8, yes: usize, no: usize) {
+    code.mark(yes);
+    code.bytes.extend([0x06 | (dst << 3), 1]);
+    let done = code.label();
+    code.jr(0x18, done);
+    code.mark(no);
+    code.bytes.extend([0x06 | (dst << 3), 0]);
+    code.mark(done);
+}
+
+pub(super) fn encode_compare8(
+    accumulator: u8,
+    scratch: u8,
+    dst: u8,
+    lhs: u8,
+    rhs: u8,
+    condition: IntCC,
+) -> Vec<u8> {
+    debug_assert_eq!(accumulator, regs::Gpr8::A as u8);
+    debug_assert_eq!(scratch, regs::Gpr8::B as u8);
+    let mut code = CompareCode::new();
+    let yes = code.label();
+    let no = code.label();
+    let signed = is_signed_condition(condition);
+    if signed {
+        emit_signed_compare_setup(&mut code, lhs, rhs);
+    } else {
+        emit_compare_setup(&mut code, lhs, rhs);
+    }
+    let condition = if signed {
+        condition.swap_args().unsigned()
+    } else {
+        condition
+    };
+    emit_condition_dispatch(&mut code, condition, yes, no);
+    emit_bool_result(&mut code, dst, yes, no);
+    code.finish()
+}
+
+pub(super) fn encode_compare16(
+    accumulator: u8,
+    scratch: u8,
+    dst: u8,
+    lhs: [u8; 2],
+    rhs: [u8; 2],
+    condition: IntCC,
+) -> Vec<u8> {
+    debug_assert_eq!(accumulator, regs::Gpr8::A as u8);
+    debug_assert_eq!(scratch, regs::Gpr8::B as u8);
+    let mut code = CompareCode::new();
+    let low = code.label();
+    let yes = code.label();
+    let no = code.label();
+    let signed = is_signed_condition(condition);
+    if signed {
+        emit_signed_compare_setup(&mut code, lhs[1], rhs[1]);
+    } else {
+        emit_compare_setup(&mut code, lhs[1], rhs[1]);
+    }
+    code.jr(0x28, low);
+    let high_condition = if signed {
+        condition.swap_args().unsigned()
+    } else {
+        condition.unsigned()
+    };
+    emit_condition_dispatch(&mut code, high_condition, yes, no);
+    code.mark(low);
+    emit_compare_setup(&mut code, lhs[0], rhs[0]);
+    emit_condition_dispatch(&mut code, condition.unsigned(), yes, no);
+    emit_bool_result(&mut code, dst, yes, no);
+    code.finish()
+}
+
+fn is_signed_condition(condition: IntCC) -> bool {
+    matches!(
+        condition,
+        IntCC::SignedLessThan
+            | IntCC::SignedGreaterThanOrEqual
+            | IntCC::SignedGreaterThan
+            | IntCC::SignedLessThanOrEqual
+    )
 }
 
 fn stack_mode_offset(mode: StackAMode, frame: Option<&FrameLayout>) -> i32 {
@@ -388,6 +671,110 @@ impl MachInst for Inst {
                 collector.reg_clobbers(regs::preg_set(regs::Gpr8::A));
             }
             Inst::LoadImm8 { dst, .. } => collector.reg_def(dst),
+            Inst::LoadMem8 {
+                address_low,
+                address_high,
+                scratch_h,
+                scratch_l,
+                accumulator,
+                dst,
+                ..
+            } => {
+                collector.reg_fixed_use(address_low, regs::c());
+                collector.reg_fixed_use(address_high, regs::b());
+                collector.reg_fixed_early_def(scratch_h, regs::h());
+                collector.reg_fixed_early_def(scratch_l, regs::l());
+                collector.reg_fixed_early_def(accumulator, regs::a());
+                collector.reg_def(dst);
+            }
+            Inst::LoadMem16 {
+                address_low,
+                address_high,
+                scratch_h,
+                scratch_l,
+                accumulator,
+                dst_low,
+                dst_high,
+                ..
+            } => {
+                collector.reg_fixed_use(address_low, regs::c());
+                collector.reg_fixed_use(address_high, regs::b());
+                collector.reg_fixed_early_def(scratch_h, regs::h());
+                collector.reg_fixed_early_def(scratch_l, regs::l());
+                collector.reg_fixed_early_def(accumulator, regs::a());
+                collector.reg_early_def(dst_low);
+                collector.reg_def(dst_high);
+            }
+            Inst::StoreMem8 {
+                address_low,
+                address_high,
+                scratch_h,
+                scratch_l,
+                accumulator,
+                src,
+                ..
+            } => {
+                collector.reg_fixed_use(address_low, regs::c());
+                collector.reg_fixed_use(address_high, regs::b());
+                collector.reg_fixed_early_def(scratch_h, regs::h());
+                collector.reg_fixed_early_def(scratch_l, regs::l());
+                collector.reg_fixed_early_def(accumulator, regs::a());
+                collector.reg_use(src);
+            }
+            Inst::StoreMem16 {
+                address_low,
+                address_high,
+                scratch_h,
+                scratch_l,
+                accumulator,
+                src_low,
+                src_high,
+                ..
+            } => {
+                collector.reg_fixed_use(address_low, regs::c());
+                collector.reg_fixed_use(address_high, regs::b());
+                collector.reg_fixed_early_def(scratch_h, regs::h());
+                collector.reg_fixed_early_def(scratch_l, regs::l());
+                collector.reg_fixed_early_def(accumulator, regs::a());
+                collector.reg_use(src_low);
+                collector.reg_use(src_high);
+            }
+            Inst::Compare8 {
+                accumulator,
+                scratch,
+                dst,
+                lhs,
+                rhs,
+                ..
+            } => {
+                collector.reg_fixed_early_def(accumulator, regs::a());
+                collector.reg_fixed_early_def(scratch, regs::b());
+                collector.reg_use(lhs);
+                collector.reg_use(rhs);
+                collector.reg_def(dst);
+            }
+            Inst::Compare16 {
+                accumulator,
+                scratch,
+                dst,
+                lhs_low,
+                lhs_high,
+                rhs_low,
+                rhs_high,
+                ..
+            } => {
+                collector.reg_fixed_early_def(accumulator, regs::a());
+                collector.reg_fixed_early_def(scratch, regs::b());
+                collector.reg_use(lhs_low);
+                collector.reg_use(lhs_high);
+                collector.reg_use(rhs_low);
+                collector.reg_use(rhs_high);
+                collector.reg_def(dst);
+            }
+            Inst::BranchIf { condition, .. } => {
+                collector.reg_use(condition);
+                collector.reg_clobbers(regs::preg_set(regs::Gpr8::A));
+            }
             Inst::LoadStack8 { dst, .. } => {
                 collector.reg_def(dst);
                 collector.reg_clobbers(regs::stack_access_clobbers());
@@ -433,7 +820,7 @@ impl MachInst for Inst {
     fn is_term(&self) -> MachTerminator {
         match self {
             Inst::Rets { .. } => MachTerminator::Ret,
-            Inst::JumpKnown { .. } => MachTerminator::Branch,
+            Inst::JumpKnown { .. } | Inst::BranchIf { .. } => MachTerminator::Branch,
             _ => MachTerminator::None,
         }
     }
@@ -443,7 +830,15 @@ impl MachInst for Inst {
     }
 
     fn is_mem_access(&self) -> bool {
-        matches!(self, Inst::LoadStack8 { .. } | Inst::StoreStack8 { .. })
+        matches!(
+            self,
+            Inst::LoadStack8 { .. }
+                | Inst::StoreStack8 { .. }
+                | Inst::LoadMem8 { .. }
+                | Inst::LoadMem16 { .. }
+                | Inst::StoreMem8 { .. }
+                | Inst::StoreMem16 { .. }
+        )
     }
 
     fn gen_move(dst_reg: Writable<Reg>, src_reg: Reg, ty: Type) -> Inst {

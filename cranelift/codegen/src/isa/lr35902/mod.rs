@@ -221,6 +221,7 @@ mod lowering_tests {
     use crate::cursor::Cursor;
     use crate::dominator_tree::DominatorTree;
     use crate::flowgraph::ControlFlowGraph;
+    use crate::ir::condcodes::IntCC;
     use crate::ir::{
         AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, UserExternalName,
         UserFuncName, types,
@@ -464,6 +465,141 @@ mod lowering_tests {
         assert!(code.iter().any(|byte| (0x88..=0x8F).contains(byte)));
         assert!(code.iter().any(|byte| (0x98..=0x9F).contains(byte)));
         assert_eq!(code.last(), Some(&0xC9));
+    }
+
+    #[test]
+    fn compiles_i8_and_i16_memory_accesses() {
+        let mut signature = Signature::new(CallConv::Fast);
+        signature.params = vec![AbiParam::new(types::I16), AbiParam::new(types::I16)];
+        signature.returns.push(AbiParam::new(types::I16));
+        let mut func = Function::with_name_signature(UserFuncName::user(0, 7), signature);
+        let block = func.dfg.make_block();
+        let address = func.dfg.append_block_param(block, types::I16);
+        let value = func.dfg.append_block_param(block, types::I16);
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(block);
+        let byte = cursor
+            .ins()
+            .load(types::I8, crate::ir::MemFlagsData::trusted(), address, 2);
+        cursor
+            .ins()
+            .store(crate::ir::MemFlagsData::trusted(), byte, address, 4);
+        let word = cursor
+            .ins()
+            .load(types::I16, crate::ir::MemFlagsData::trusted(), address, 6);
+        cursor
+            .ins()
+            .store(crate::ir::MemFlagsData::trusted(), value, address, 8);
+        cursor.ins().return_(&[word]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+        let code = result.0.buffer.data();
+
+        assert!(code.windows(2).any(|bytes| bytes == [0x60, 0x69]));
+        assert!(code.contains(&0x7E));
+        assert!(code.contains(&0x77));
+        assert_eq!(code.last(), Some(&0xC9));
+    }
+
+    #[test]
+    fn compiles_i8_signed_comparison_and_conditional_branch() {
+        let mut signature = Signature::new(CallConv::Fast);
+        signature.params = vec![AbiParam::new(types::I8), AbiParam::new(types::I8)];
+        let mut func = Function::with_name_signature(UserFuncName::user(0, 8), signature);
+        let entry = func.dfg.make_block();
+        let lhs = func.dfg.append_block_param(entry, types::I8);
+        let rhs = func.dfg.append_block_param(entry, types::I8);
+        let yes = func.dfg.make_block();
+        let no = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(entry);
+        let condition = cursor.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
+        cursor.ins().brif(condition, yes, &[], no, &[]);
+        cursor.insert_block(yes);
+        let value = cursor.ins().iconst(types::I8, 1);
+        cursor.ins().return_(&[value]);
+        cursor.insert_block(no);
+        let value = cursor.ins().iconst(types::I8, 0);
+        cursor.ins().return_(&[value]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+        let code = result.0.buffer.data();
+
+        assert!(code.windows(2).any(|bytes| bytes == [0xE6, 0x80]));
+        assert!(code.contains(&0xC2));
+        assert!(code.contains(&0xC3));
+    }
+
+    #[test]
+    fn compiles_i16_unsigned_comparison() {
+        let mut signature = Signature::new(CallConv::Fast);
+        signature.params = vec![AbiParam::new(types::I16), AbiParam::new(types::I16)];
+        let mut func = Function::with_name_signature(UserFuncName::user(0, 9), signature);
+        let entry = func.dfg.make_block();
+        let lhs = func.dfg.append_block_param(entry, types::I16);
+        let rhs = func.dfg.append_block_param(entry, types::I16);
+        let yes = func.dfg.make_block();
+        let no = func.dfg.make_block();
+        let mut cursor = crate::cursor::FuncCursor::new(&mut func);
+        cursor.insert_block(entry);
+        let condition = cursor.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
+        cursor.ins().brif(condition, yes, &[], no, &[]);
+        cursor.insert_block(yes);
+        cursor.ins().return_(&[]);
+        cursor.insert_block(no);
+        cursor.ins().return_(&[]);
+        drop(cursor);
+
+        let cfg = ControlFlowGraph::with_function(&func);
+        let domtree = DominatorTree::with_function(&func, &cfg);
+        let triple = Triple::from_str("z80-unknown-none").unwrap();
+        let backend = isa_builder(triple)
+            .finish(settings::Flags::new(settings::builder()))
+            .unwrap();
+        let result = backend
+            .compile_function(
+                &func,
+                &domtree,
+                &mut regalloc2::Ctx::default(),
+                false,
+                &mut ControlPlane::default(),
+            )
+            .unwrap();
+        let code = result.0.buffer.data();
+
+        assert!(code.contains(&0x28));
+        assert!(code.contains(&0xC2));
+        assert!(code.contains(&0xC3));
     }
 
     #[test]
